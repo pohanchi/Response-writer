@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 import torch
 import IPython, pdb
 import functools
@@ -10,6 +10,7 @@ from datasets import load_dataset, list_datasets, load_metric
 from transformers import BertModel, BertConfig, BertTokenizerFast
 from torch import nn
 import logging
+import random
 import torch_optimizer as optim
 logging.basicConfig(level=logging.INFO)
 
@@ -82,7 +83,7 @@ def convert_to_features(example_batch, max_length, stride):
 # Tokenize our eval dataset
 def convert_to_eval_features(example_batch, max_length, stride):
     # Tokenize contexts and questions (as pairs of inputs)
-    encodings = tokenizer(example_batch['context'], truncation=False, max_length=max_length, padding="max_length", stride=stride, return_length=True)
+    encodings = tokenizer(example_batch['context'], truncation=True, max_length=max_length, padding="max_length", stride=stride, return_length=True)
     question_ans_encodings = tokenizer([example_batch['question']], truncation=False, return_length=True)
     # Compute start and end tokens for labels using Transformers's fast tokenizers alignement methods.
     encodings.update({"qans_input_ids":question_ans_encodings['input_ids'], "qans_token_type_ids":question_ans_encodings['token_type_ids'], "qans_att_mask": question_ans_encodings['attention_mask'], "qans_length":question_ans_encodings['length']})
@@ -97,28 +98,33 @@ def collate_fn_eval(examples):
 if __name__ == "__main__":
     
     #config
-    epoches = 6
+    epoches = 40
     max_length = 512
     stride = 128
-    hid_size = 512
-    n_head = 16
+    hid_size = 256
+    n_head = 8
     n_layer = 6
     layer_eps = 1e-12
-    batch_size = 32
-    lr = 2e-4
-    log_step = 100
+    batch_size = 16
+    lr = 2e-3
+    log_step = 50
     dev_step = 500
     save_step = 1000
-    warm_up_ratio = 0.2
-    gradient_accumulation_steps = 5
+    warm_up_ratio = 0.1
+    gradient_accumulation_steps = 10
     gradient_clipping = 1.0
-    eval_file_path = "eval_squad.json"
+    eval_file_path = "eval_squad_h256.json"
     exp_name = "plot_training_loss"
 
     wandb.init(project="Response-writer", name=exp_name)
+    # setup random seed
+    random.seed(426)
+    np.random.seed(426)
+    torch.manual_seed(426)
+
 
     # setup dataset, dataloader, map function
-    tokenizer = BertTokenizerFast.from_pretrained("bert-base-cased")
+    tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
     squad_dataset = load_dataset("squad", cache_dir="./squad")
     squad_dataset_eval = load_dataset("squad", cache_dir="./squad", split="validation")
     convert_to_features =functools.partial(convert_to_features, max_length=max_length, stride=stride)
@@ -132,12 +138,12 @@ if __name__ == "__main__":
     # num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
     # model.resize_token_embeddings(len(tokenizer))
 
-    decoder_layer = TransformerDecoderLayer(d_model=hid_size, nhead=n_head)
+    decoder_layer = TransformerDecoderLayer(d_model=hid_size, nhead=n_head,activation="gelu")
     transformer_decoder = TransformerDecoder(decoder_layer, num_layers=n_layer)
     projector = nn.Linear(768, hid_size)
-    project_norm = nn.LayerNorm(hid_size, eps=layer_eps)
-    inv_projector = nn.Linear(hid_size,768)
+    # projector_norm = nn.LayerNorm(hid_size,eps=layer_eps)
     act_fn = nn.functional.gelu
+    project_voc = nn.Linear(hid_size,30522)
 
     # Format our dataset to outputs torch.Tensor and just take below attribute out
     columns = ['input_ids', 'token_type_ids', 'attention_mask', 'start_positions', 'end_positions', 'length', "qans_input_ids","qans_token_type_ids", "qans_att_mask", "qans_length"]
@@ -150,24 +156,20 @@ if __name__ == "__main__":
     dev_dataloader = torch.utils.data.DataLoader(squad_dataset['validation'], collate_fn=collate_fn, batch_size=batch_size)
     dev_dataloader_gen = torch.utils.data.DataLoader(squad_dataset_eval, collate_fn=collate_fn_eval, batch_size=1)
 
-    all_param = list(project_norm.parameters())+list(project_norm.parameters())+list(transformer_decoder.parameters())+list(inv_projector.parameters())
-    # optimizer = torch.optim.AdamW(all_param, lr=lr)
-    optimizer = optim.Lamb(all_param, lr=lr,betas=(0.9, 0.999),eps=1e-8,weight_decay=0,)
+    all_param = list(projector.parameters())+list(transformer_decoder.parameters())+list(project_voc.parameters())
+    optimizer = torch.optim.AdamW(all_param, lr=lr)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(warm_up_ratio*len(dataloader)*epoches/gradient_accumulation_steps),num_training_steps=int(len(dataloader)*epoches/gradient_accumulation_steps))
-    
-    model.embeddings.word_embeddings.required_grad = False
-    
+        
     # put module to device (GPU)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = model.to(device)
     transformer_decoder = transformer_decoder.to(device)
-    project_norm = project_norm.to(device)
     projector = projector.to(device)
-    inv_projector = inv_projector.to(device)
+    project_voc = project_voc.to(device)
 
     # training-loss module
     lgsoft=torch.nn.LogSoftmax(dim=-1)
-    loss_fn = nn.NLLLoss()
+    loss_fn = nn.NLLLoss(reduction="mean")
 
     #init training log
     logging_loss = 0
@@ -177,12 +179,9 @@ if __name__ == "__main__":
     step =0
     dev_loss = 0
 
-    globalstep_bar = tqdm.tqdm(total=int(len(dataloader)*epoches/gradient_accumulation_steps),position=1)
-    progress = tqdm.tqdm(dataloader, dynamic_ncols=True,position=2)
-    progress_dev = tqdm.tqdm(dev_dataloader, dynamic_ncols=True,position=3)
-    progress_eval = tqdm.tqdm(dev_dataloader_gen, dynamic_ncols=True,position=4)
-
-    for epoch in tqdm.trange(epoches, dynamic_ncols=True,position=0):
+    globalstep_bar = tqdm.tqdm(total=int(len(dataloader)*epoches/gradient_accumulation_steps),position=1,leave=False)
+    for epoch in tqdm.trange(epoches, dynamic_ncols=True,position=0,leave=False):
+        progress = tqdm.tqdm(dataloader, dynamic_ncols=True,position=2,leave=False)
         for num, batch in enumerate(progress):
             batch = batch.to(device)
             step +=1
@@ -193,15 +192,13 @@ if __name__ == "__main__":
             with torch.no_grad():
                 #load the last layer embedding from BERT
                 memory_embed =model(**encoder_input)["last_hidden_state"]
-                project_mem=projector(memory_embed)
-                project_mem=project_norm(project_mem).transpose(0,1)
+                project_mem=projector(memory_embed).transpose(0,1)
                 
                 #load the first layer embedding from BERT 
                 decoder_embed = model(**decoder_input)['hidden_states'][0]
 
             #project to fix dimension    
             decoder_embed=projector(decoder_embed)
-            decoder_embed=project_norm(decoder_embed)
 
             #generate casual masking
             tgt_mask = generate_square_subsequent_mask(decoder_embed.shape[1]) 
@@ -215,11 +212,9 @@ if __name__ == "__main__":
 
             #project to fix dimension    
             output = transformer_decoder(**forward_input).transpose(0, 1)
-            inv_projector(output)
-            output = inv_projector(output)
             output = act_fn(output)
 
-            logits = torch.matmul(output, model.embeddings.word_embeddings.weight.T)
+            logits = project_voc(output)
             log_distr = lgsoft(logits)
 
             # next input is the label of current input (shift left 1)
@@ -247,21 +242,23 @@ if __name__ == "__main__":
                 scheduler.step()
                 transformer_decoder.zero_grad()
                 projector.zero_grad()
-                inv_projector.zero_grad()
+                project_voc.zero_grad()
                 global_step +=1
                 globalstep_bar.update(1)
 
                 if (global_step % log_step) == 0:
                     display_loss = (train_loss - logging_loss) / log_step
-                    progress.set_description(f"Loss:{display_loss:.5f}")
+                    globalstep_bar.set_description(f"Loss:{display_loss:.5f}")
                     wandb.log({"tr_loss": display_loss, "epoch": float(epoch+(num/len(dataloader)))}, step=global_step)
                     logging_loss = train_loss
 
                 if (global_step % dev_step) == 0:
                     transformer_decoder = transformer_decoder.eval()
-                    project_norm = project_norm.eval()
-                    inv_projector = inv_projector.eval()
+                    # projector_norm = projector_norm.eval()
+                    projector = projector.eval()
+                    project_voc = project_voc.eval()
                     print("Start Dev")
+                    progress_dev = tqdm.tqdm(dev_dataloader, dynamic_ncols=True,position=3,leave=False)
                     for dev_i, batch in enumerate(progress_dev):
                         batch = batch.to(device)
                         # generate input which need utilize BERT to generate pretrained embeddings
@@ -271,15 +268,13 @@ if __name__ == "__main__":
                         with torch.no_grad():
                             #load the last layer embedding from BERT
                             memory_embed =model(**encoder_input)["last_hidden_state"]
-                            project_mem=projector(memory_embed)
-                            project_mem=project_norm(project_mem).transpose(0,1)
+                            project_mem=projector(memory_embed).transpose(0,1)
                             
                             #load the first layer embedding from BERT 
                             decoder_embed = model(**decoder_input)['hidden_states'][0]
 
                         #project to fix dimension    
                         decoder_embed=projector(decoder_embed)
-                        decoder_embed=project_norm(decoder_embed)
 
                         #generate casual masking
                         tgt_mask = generate_square_subsequent_mask(decoder_embed.shape[1]) 
@@ -293,11 +288,9 @@ if __name__ == "__main__":
 
                         #project to fix dimension    
                         output = transformer_decoder(**forward_input).transpose(0, 1)
-                        inv_projector(output)
-                        output = inv_projector(output)
                         output = act_fn(output)
 
-                        logits = torch.matmul(output, model.embeddings.word_embeddings.weight.T)
+                        logits = project_voc(output)
                         log_distr = lgsoft(logits)
 
                         # next input is the label of current input (shift left 1)
@@ -317,7 +310,7 @@ if __name__ == "__main__":
                         dev_loss += eval_loss.item()
                     
                     print(f"dev loss: {dev_loss/(len(dev_dataloader)//gradient_accumulation_steps):.5f}")
-                    wandb.log({"Dev loss": dev_loss}, step=global_step)
+                    wandb.log({"Dev loss": dev_loss/(len(dev_dataloader)//gradient_accumulation_steps)}, step=global_step)
                     dev_loss = 0
 
                     if (global_step % save_step) == 0:
@@ -328,6 +321,7 @@ if __name__ == "__main__":
                         ref_dict = {}
                         answer_list = []
                         ref_list = []
+                        progress_eval = tqdm.tqdm(dev_dataloader_gen, dynamic_ncols=True,position=4)
                         for eval_i, batch in enumerate(progress_eval):
                             encoder_input = {"input_ids":torch.tensor(batch['input_ids']).to(device),"attention_mask":torch.tensor(batch["attention_mask"]).to(device),"token_type_ids":torch.tensor(batch["token_type_ids"]).to(device)}
                             decoder_input = {"input_ids":torch.tensor(batch["qans_input_ids"]).squeeze(0).to(device), "token_type_ids":torch.tensor(batch["qans_token_type_ids"]).squeeze(0).to(device),"attention_mask":torch.tensor(batch["qans_att_mask"]).squeeze(0).to(device),"output_hidden_states":True}
@@ -335,15 +329,13 @@ if __name__ == "__main__":
                             with torch.no_grad():
                                 #load the last layer embedding from BERT
                                 memory_embed =model(**encoder_input)["last_hidden_state"]
-                                project_mem=projector(memory_embed)
-                                project_mem=project_norm(project_mem).transpose(0,1)
+                                project_mem=projector(memory_embed).transpose(0,1)
                                 
                                 #load the first layer embedding from BERT 
                                 decoder_embed = model(**decoder_input)['hidden_states'][0]
                         
                             #project to fix dimension    
                             decoder_embed=projector(decoder_embed)
-                            decoder_embed=project_norm(decoder_embed)
 
                             #generate casual masking
                             tgt_mask = generate_square_subsequent_mask(decoder_embed.shape[1]) 
@@ -358,12 +350,11 @@ if __name__ == "__main__":
                             next_word = ""
                             while next_word != "[SEP]" and loop_step < max_loop:
                                 forward_input = {"tgt":decoder_embed,"memory":project_mem,"tgt_mask":tgt_mask.to(device), "memory_key_padding_mask":mem_key_padding_mask, "tgt_key_padding_mask": tgt_key_padding_mask }
+                                
                                 #project to fix dimension    
                                 output = transformer_decoder(**forward_input).transpose(0, 1)
-                                inv_projector(output)
-                                output = inv_projector(output)
                                 output = act_fn(output)[:,-1,:]
-                                next_id = torch.argmax(torch.matmul(output, model.embeddings.word_embeddings.weight.T))
+                                next_id = torch.argmax(project_voc(output))
                                 next_word = tokenizer.convert_ids_to_tokens(next_id.tolist())
                                 decoder_input["input_ids"] = torch.cat((decoder_input["input_ids"],next_id.unsqueeze(0).unsqueeze(0).to(device)), dim=1)
                                 decoder_input["token_type_ids"] = torch.cat((decoder_input["token_type_ids"],torch.tensor([1]).unsqueeze(0).to(device)), dim=1)
@@ -376,7 +367,6 @@ if __name__ == "__main__":
 
                                 #project to fix dimension    
                                 decoder_embed=projector(decoder_embed)
-                                decoder_embed=project_norm(decoder_embed)
 
                                 #generate casual masking
                                 tgt_mask = generate_square_subsequent_mask(decoder_embed.shape[1]) 
@@ -395,11 +385,11 @@ if __name__ == "__main__":
                             ref_dict["answers"] = {"text":batch["answers"][0]['text'], "answer_start":batch["answers"][0]['answer_start']}
                             answer_list.append(copy.deepcopy(metric_dict))
                             ref_list.append(copy.deepcopy(ref_dict))
+                            
                         score = squad_metric.compute(predictions=answer_list,  references=ref_list)
-                        # eval_json = json.dumps(answer_dict)
                         json.dump(answer_dict,open(eval_file_path,"w"))
                         print(f"EM: {score['exact_match']}, f1: {score['f1']}")
                         wandb.log({"eval_EM": score['exact_match'], "eval_F1":score['f1']}, step=global_step)
                     transformer_decoder = transformer_decoder.train()
-                    project_norm = project_norm.train()
-                    inv_projector = inv_projector.train()
+                    projector = projector.train()
+                    project_voc = project_voc.train()
