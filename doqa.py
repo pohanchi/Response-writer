@@ -20,5 +20,7 @@ logging.basicConfig(level=logging.INFO)
 
 if __name__ == "__main__":
     tokenizer_bert = BertTokenizerFast.from_pretrained("bert-base-uncased")
-    squad_dataset = load_dataset("doqa", cache_dir="./doqa")
+    doqa_dataset = load_dataset("doqa","cooking" ,cache_dir="./doqa")
+    IPython.embed()
+    pdb.set_trace()
 
