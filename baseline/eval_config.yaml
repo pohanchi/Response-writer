@@ -1,0 +1,15 @@
+epoches: 80
+batch_size: 10
+local_rank: -1
+fp16: False
+max_grad_norm: 1.0
+evaluate_during_training: True
+version_2_with_negative: False
+max_answer_length: 30
+do_lower_case: True
+verbose_logging: True
+null_score_diff_threshold: 0.0
+n_best_size: 20
+output_dir: doqa_save_model_test_travel
+exp_name: DoQA_BertBaseline_test_travel
+seed: 42
