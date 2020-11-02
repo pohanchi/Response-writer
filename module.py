@@ -305,6 +305,134 @@ class TransformerEncoderLayer(nn.Module):
         src = src + self.dropout2(src2[0])
         src = self.LayerNorm2(src)
         return src
+    
+
+class TransformerEncoderLayer_onlyAttention(nn.Module):
+    r"""TransformerEncoderLayer is made up of self-attn and feedforward network.
+    This standard encoder layer is based on the paper "Attention Is All You Need".
+    Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+    Lukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. In Advances in
+    Neural Information Processing Systems, pages 6000-6010. Users may modify or implement
+    in a different way during application.
+
+    Args:
+        d_model: the number of expected features in the input (required).
+        nhead: the number of heads in the multiheadattention models (required).
+        dim_feedforward: the dimension of the feedforward network model (default=2048).
+        dropout: the dropout value (default=0.1).
+        activation: the activation function of intermediate layer, relu or gelu (default=relu).
+
+    Examples::
+        >>> encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
+        >>> src = torch.rand(10, 32, 512)
+        >>> out = encoder_layer(src)
+    """
+
+    def __init__(self, config, activation="gelu"):
+        super(TransformerEncoderLayer_onlyAttention, self).__init__()
+        self.self_attn = MultiHeadAttention(config)
+        # Implementation of Feedforward mode
+        self.LayerNorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.dropout = Dropout(config.dropout)
+
+        # self.activation = ACT2FN[activation]
+
+    def __setstate__(self, state):
+        if 'activation' not in state:
+            state['activation'] = F.relu
+        super(TransformerEncoderLayer_onlyAttention, self).__setstate__(state)
+
+    def forward(self, hidden_states, attention_mask, relative_embed):
+        r"""Pass the input through the encoder layer.
+
+        Args:
+            src: the sequence to the encoder layer (required).
+            src_mask: the mask for the src sequence (optional).
+            src_key_padding_mask: the mask for the src keys per batch (optional).
+
+        Shape:
+            see the docs in Transformer class.
+        """
+        src2 =  self.self_attn(
+            hidden_states,
+            relative_embed,
+            attention_mask=attention_mask,
+        )
+        # src = hidden_states + self.dropout(src2[0])
+        src2 = hidden_states + self.dropout(src2[0])
+
+        src = self.LayerNorm(src2)
+
+        return src2
+
+
+class TransformerEncoderLayer_onlyFFT(nn.Module):
+    r"""TransformerEncoderLayer is made up of self-attn and feedforward network.
+    This standard encoder layer is based on the paper "Attention Is All You Need".
+    Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+    Lukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. In Advances in
+    Neural Information Processing Systems, pages 6000-6010. Users may modify or implement
+    in a different way during application.
+
+    Args:
+        d_model: the number of expected features in the input (required).
+        nhead: the number of heads in the multiheadattention models (required).
+        dim_feedforward: the dimension of the feedforward network model (default=2048).
+        dropout: the dropout value (default=0.1).
+        activation: the activation function of intermediate layer, relu or gelu (default=relu).
+
+    Examples::
+        >>> encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
+        >>> src = torch.rand(10, 32, 512)
+        >>> out = encoder_layer(src)
+    """
+
+    def __init__(self, config, activation="gelu"):
+        super(TransformerEncoderLayer_onlyFFT, self).__init__()
+        # self.self_attn = MultiHeadAttention(config)
+
+        self.linear1 = Linear(config.hidden_size, config.intermediate_size)
+        self.dropout = Dropout(config.dropout)
+        self.linear2 = Linear(config.intermediate_size, config.hidden_size)
+
+        self.LayerNorm1 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.LayerNorm2 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.dropout1 = Dropout(config.dropout)
+        self.dropout2 = Dropout(config.dropout)
+
+        self.activation = ACT2FN[activation]
+        # Implementation of Feedforward mode
+        # self.LayerNorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.dropout = Dropout(config.dropout)
+
+        # self.activation = ACT2FN[activation]
+
+    def __setstate__(self, state):
+        if 'activation' not in state:
+            state['activation'] = F.relu
+        super(TransformerEncoderLayer_onlyFFT, self).__setstate__(state)
+
+    def forward(self, hidden_states, attention_mask, relative_embed):
+        r"""Pass the input through the encoder layer.
+
+        Args:
+            src: the sequence to the encoder layer (required).
+            src_mask: the mask for the src sequence (optional).
+            src_key_padding_mask: the mask for the src keys per batch (optional).
+
+        Shape:
+            see the docs in Transformer class.
+        """
+        # src = hidden_states + self.dropout1(src2[0])
+        # src = self.LayerNorm1(hidden_states)
+        src = self.linear2(self.dropout(self.activation(self.linear1(hidden_states))))
+        src = hidden_states + self.dropout2(src)
+        src = self.LayerNorm2(src)
+
+        return src
+
+
+
 
 def build_relative_position(query_size, key_size, device):
     """ Build relative position according to the query and key
@@ -444,7 +572,11 @@ class SelfAttention(nn.Module):
             scale_factor += 1
         if 'p2p' in self.pos_att_type:
             scale_factor += 1
+            
         scale = math.sqrt(query_layer.size(-1)*scale_factor)
+
+        query_layer = query_layer / scale
+
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
 
 
@@ -455,8 +587,6 @@ class SelfAttention(nn.Module):
 
         if rel_att is not None:
             attention_scores = (attention_scores + rel_att)
-
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
 
 
@@ -564,9 +694,9 @@ class PassageEncoder(nn.Module):
         super(PassageEncoder, self).__init__()
         layer = TransformerEncoderLayer(config,activation="gelu")
         self.model = TransformerEncoder(layer,config.n_layer,config)
-
+        self.LayerNorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
     def forward(self, token_embed, attention_mask, relative_embed):
-         embedding = token_embed
+         embedding = self.LayerNorm(token_embed)
          out = self.model(embedding, attention_mask, relative_embed)
 
          return out
@@ -576,6 +706,18 @@ class ReasonNet(nn.Module):
     def __init__(self, config):
         super(ReasonNet, self).__init__()
         layer = TransformerEncoderLayer(config,activation="gelu")
+        self.model = TransformerEncoder(layer,config.n_layer,config)
+
+    def forward(self, hidden_state, attention_mask, relative_embed):
+        
+        output = self.model(hidden_state, attention_mask, relative_embed)
+    
+        return output
+
+class ReasonNet_FFT(nn.Module):
+    def __init__(self, config):
+        super(ReasonNet_FFT, self).__init__()
+        layer = TransformerEncoderLayer_onlyFFT(config,activation="gelu")
         self.model = TransformerEncoder(layer,config.n_layer,config)
 
     def forward(self, hidden_state, attention_mask, relative_embed):
@@ -599,11 +741,19 @@ class CQAModel(nn.Module):
         self.qp_seg_embed = nn.Embedding(3, config.hidden_size) # [q,a, pad]
         self.q_encoder = CoherenceEncoder(Namespace(**config.q_config))
         self.p_encoder = PassageEncoder(Namespace(**config.p_config))
-        self.interNet  = ReasonNet(Namespace(**config.r_config))
+        self.interNet1  = ReasonNet(Namespace(**config.r_config))
+        self.interNet2  = ReasonNet(Namespace(**config.r_config))
+
+
         self.LayerNorm = LayerNorm(config.hidden_size, eps=config.adam_epsilon)
         self.qa_output = nn.Linear(config.hidden_size, config.num_labels)
+        self.dialog_output = nn.Linear(config.hidden_size, config.dialog_labels)
+        self.dialog_loss_fct = nn.CrossEntropyLoss()
+
+        self.q_encoder.model = self.p_encoder.model
+        self.q_encoder.LayerNorm = self.p_encoder.LayerNorm
     
-    def forward(self,q_ids, q_segs, q_att_masks, q_start, q_len, c_ids, c_att_masks, c_len, dialog_act, start_positions, end_positions):
+    def forward(self,q_ids, q_segs, q_att_masks, q_start, q_len, c_ids, c_att_masks, c_len, dialog_act,start_positions, end_positions):
         """
         q_ids / q_segs / q_att_masks: 
             size: B x N x 1: integer matrix
@@ -614,7 +764,6 @@ class CQAModel(nn.Module):
             M will be the max length of context in batch 
         """ 
 
-
         q_embed = self.embedding(q_ids)
         c_embed = self.embedding(c_ids)
 
@@ -622,15 +771,24 @@ class CQAModel(nn.Module):
 
         device = q_embed.device
 
+        c_seg   = torch.zeros_like(c_ids).fill_(3)
+        seg_c_embed = self.relative_seg_embed(c_seg)
+
+
         q_att_masks = self.get_extended_attention_mask(q_att_masks, q_embed.size()[:-1], device)
         c_att_masks = self.get_extended_attention_mask(c_att_masks, c_embed.size()[:-1], device)
 
+        # q_att_masks = self.get_extended_mask_current_question(q_att_masks, q_start, device)
 
-        q_reps = self.q_encoder(q_embed, seg_embed,q_att_masks,self.relative_pos_embed.weight)
+        q_reps = self.q_encoder(q_embed, seg_embed, q_att_masks,self.relative_pos_embed.weight)
+
+        c_embed = seg_c_embed + c_embed
 
         c_reps = self.p_encoder(c_embed, c_att_masks,self.relative_pos_embed.weight)
 
-
+        dialog_reps = q_reps[:,0,:]
+        prediction = self.dialog_output(dialog_reps)
+        dialog_loss = self.dialog_loss_fct(prediction, dialog_act)
         
         reason_input = []
         seg_input = []
@@ -656,23 +814,44 @@ class CQAModel(nn.Module):
         reason_input = self.LayerNorm(reason_input)
 
         reason_mask = self.get_extended_attention_mask(reason_mask, reason_input.size()[:-1], device)
+        reason_mask_inter = self.get_extended_cross_attention_mask_inter(reason_mask, c_len, device)
 
-        final_output = self.interNet(reason_input, reason_mask, self.relative_pos_embed.weight)
+        final_output = self.interNet1(reason_input, reason_mask_inter, self.relative_pos_embed.weight)
+
+        final_output = self.interNet2(final_output, reason_mask, self.relative_pos_embed.weight)
 
         final_out = []
         for i in range(len(final_output)):
             final_out.append(final_output[i][:c_len[i]])
-            final_rep = pad_sequence(final_out, batch_first=True)
+        final_rep = pad_sequence(final_out, batch_first=True)
         
+        final_rep = final_output
+
         logits=self.qa_output(final_rep)
         start_logits, end_logits = logits.split(1, dim=-1)
         start_logits = start_logits.squeeze(-1)
         end_logits = end_logits.squeeze(-1)
-        
-        # IPython.embed()
-        # pdb.set_trace()
 
-        return  start_logits, end_logits
+
+        total_loss = None
+        if start_positions is not None and end_positions is not None:
+            # If we are on multi-GPU, split add a dimension
+            if len(start_positions.size()) > 1:
+                start_positions = start_positions.squeeze(-1)
+            if len(end_positions.size()) > 1:
+                end_positions = end_positions.squeeze(-1)
+            # sometimes the start/end positions are outside our model inputs, we ignore these terms
+            ignored_index = start_logits.size(1)
+            start_positions.clamp_(0, ignored_index)
+            end_positions.clamp_(0, ignored_index)
+
+            loss_fct = nn.CrossEntropyLoss(ignore_index=ignored_index)
+            start_loss = loss_fct(start_logits, start_positions)
+            end_loss = loss_fct(end_logits, end_positions)
+            total_loss = (start_loss + end_loss  + dialog_loss ) /3
+
+        output = (start_logits, end_logits)
+        return ((total_loss,) + output) if total_loss is not None else output
 
     def get_extended_attention_mask(self,attention_mask, input_shape, device):
         """
@@ -714,6 +893,76 @@ class CQAModel(nn.Module):
         extended_attention_mask = extended_attention_mask  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
         return extended_attention_mask
+    
+    def get_extended_cross_attention_mask_inter(self,attention_mask, c_len, device):
+        """
+        Makes broadcastable attention and causal masks so that future and masked tokens are ignored.
+
+        Arguments:
+            attention_mask (:obj:`torch.Tensor`):
+                Mask with ones indicating tokens to attend to, zeros for tokens to ignore.
+            input_shape (:obj:`Tuple[int]`):
+                The shape of the input to the model.
+            device: (:obj:`torch.device`):
+                The device of the input to the model.
+
+        Returns:
+            :obj:`torch.Tensor` The extended attention mask, with a the same dtype as :obj:`attention_mask.dtype`.
+        """
+        # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
+        # ourselves in which case we just need to make it broadcastable to all heads.
+        attention_mask = attention_mask.repeat(1,1,attention_mask.shape[-1],1)
+
+        for i in range(attention_mask.shape[0]):
+            attention_mask[i][:,:c_len[i], :c_len[i]] = -10000
+            attention_mask[i][:,c_len[i]:, c_len[i]: ] = -10000 
+    
+    def get_extended_mask_current_question(self,attention_mask, c_len, device):
+        """
+        Makes broadcastable attention and causal masks so that future and masked tokens are ignored.
+
+        Arguments:
+            attention_mask (:obj:`torch.Tensor`):
+                Mask with ones indicating tokens to attend to, zeros for tokens to ignore.
+            input_shape (:obj:`Tuple[int]`):
+                The shape of the input to the model.
+            device: (:obj:`torch.device`):
+                The device of the input to the model.
+
+        Returns:
+            :obj:`torch.Tensor` The extended attention mask, with a the same dtype as :obj:`attention_mask.dtype`.
+        """
+        # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
+        # ourselves in which case we just need to make it broadcastable to all heads.
+        attention_mask = attention_mask.repeat(1,1,attention_mask.shape[-1],1)
+
+        for i in range(attention_mask.shape[0]):
+            attention_mask[i][:,:, 1:c_len[i]] = -10000
+            # attention_mask[i][:,c_len[i]:, c_len[i]: ] = -10000 
+        
+    
+    def get_extended_cross_attention_mask_intra(self,attention_mask, c_len, device):
+        """
+        Makes broadcastable attention and causal masks so that future and masked tokens are ignored.
+
+        Arguments:
+            attention_mask (:obj:`torch.Tensor`):
+                Mask with ones indicating tokens to attend to, zeros for tokens to ignore.
+            input_shape (:obj:`Tuple[int]`):
+                The shape of the input to the model.
+            device: (:obj:`torch.device`):
+                The device of the input to the model.
+
+        Returns:
+            :obj:`torch.Tensor` The extended attention mask, with a the same dtype as :obj:`attention_mask.dtype`.
+        """
+        # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
+        # ourselves in which case we just need to make it broadcastable to all heads.
+        attention_mask = attention_mask.repeat(1,1,attention_mask.shape[-1],1)
+
+        for i in range(attention_mask.shape[0]):
+            attention_mask[i][:,:c_len[i], c_len[i]:] = -10000
+            attention_mask[i][:,c_len[i]:, :c_len[i] ] = -10000 
 
 
 

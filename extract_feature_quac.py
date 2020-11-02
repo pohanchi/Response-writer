@@ -19,8 +19,7 @@ from enum import Enum
 from multiprocessing import Pool, cpu_count
 from functools import partial
 from torch.nn.utils.rnn import pad_sequence 
-
-
+from tqdm import trange
 logger = logging
 
 import torch
@@ -110,7 +109,7 @@ def convert_examples_to_features(
 
         features = list(
             tqdm(
-                p.imap(annotate_, examples, chunksize=8),
+                p.imap(annotate_, examples, chunksize=16),
                 total=len(examples),
                 desc="convert examples to features",
                 disable=not tqdm_enabled,
@@ -120,6 +119,9 @@ def convert_examples_to_features(
     new_features = []
     unique_id = 1000000000
     example_index = 0
+
+    # IPython.embed()
+    # pdb.set_trace()
 
 
     for example_features in tqdm(
@@ -464,7 +466,7 @@ class RCExample:
         context_text: The context string
         answer_text: The answer string
         start_position_character: The character position of the start of the answer
-        title: The title of the example
+        title: The title of the exampleconvert_examples_to_features
         answers: None by default, this is used during evaluation. Holds answers as well as their start positions.
         is_impossible: False by default, set to True if the example has no possible answer.
     """
@@ -477,7 +479,6 @@ class RCExample:
         dialog_act,
         answer_text,
         start_position_character,
-        title,
         answers=[],
         is_impossible=False,
     ):
@@ -485,7 +486,6 @@ class RCExample:
         self.question_text = question_text
         self.context_text = context_text
         self.answer_text = answer_text
-        self.title = title
         self.is_impossible = is_impossible
         self.dialog_act = dialog_act
         self.answers = answers
@@ -522,19 +522,20 @@ def convert_dataset_to_examples(datasets, mode):
     
     examples = []
     
-    for index in range(len(datasets[mode])):
+    for index in trange(len(datasets[mode])):
         data = datasets[mode][index]
 
         start_position_character = None
         answer_text = None
         answers = []
         
-        if data['orig_answer']['text'][0] == "CANNOTANSWER":
+        if data['orig_answer']['text'] == "CANNOTANSWER":
             is_impossible = True
         else:
             is_impossible = False
-            answer_text = data['answers']['text'][0]
-            start_position_character = data["answers"]['answer_start'][0]
+            answer = data['answers'][0]
+            answer_text = answer['text']
+            start_position_character = answer['answer_start']
             answers = data["answers"]
 
         num = data['id'].split("#")[-1]
@@ -546,7 +547,7 @@ def convert_dataset_to_examples(datasets, mode):
             for i in range(previous,1,1):
                 history = datasets[mode][index+i]
                 if i !=0:
-                    question = question + history['question'] + " " + history['answers']['text'][0] + " [SEP] "
+                    question = question + history['question'] + " " + history['orig_answer']['text'] + " [SEP] "
                 else:
                     question = question + history['question'] + " " +"[SEP]"
 
@@ -561,7 +562,6 @@ def convert_dataset_to_examples(datasets, mode):
                             dialog_act=dialog_act,
                             answer_text=answer_text,
                             start_position_character=start_position_character, 
-                            title=data['title'],
                             is_impossible=is_impossible,
                             answers=answers)
     
@@ -660,21 +660,31 @@ class RCResult:
 
 
 
-def extract_feature(dataset, mode, tokenizer):
-    pass
 
+if __name__ == '__main__':
 
-
-if __name__ == "__main__":
-    is_training = True
-    dataset = "quac"
+    mode = "test"
+    name = "quac/val_v0.2.json"
+    is_training = False
+    dataset_raw = []
     stride = 128
-    mode = "train"
-    cached_features_file = "quac_train_file_noanswer_v2"
+    cached_features_file = "quac_test_file_noanswer_v2"
     
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-            
-    examples = convert_dataset_to_examples(dataset,mode)
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased") 
+    data = json.load(open(name))['data']
+    dataset_dict = {mode:None}
+
+    for pa_pairs in data:
+        context_pa_pair = pa_pairs['paragraphs'][0]
+        context = context_pa_pair['context']
+        for qa_pairs in context_pa_pair['qas']:
+            qa_pairs.update({'context': context})
+            dataset_raw.append(qa_pairs)
+
+    dataset_dict[mode] = dataset_raw
+    # dataset= Dataset.from_dict(dataset_dict)
+
+    examples = convert_dataset_to_examples(dataset_dict,mode)
 
     features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, doc_stride=stride,  is_training=is_training)
 
@@ -682,3 +692,4 @@ if __name__ == "__main__":
     {"features": features, "dataset": dataset, "examples": examples},
     cached_features_file,
     )
+

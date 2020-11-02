@@ -6,8 +6,8 @@ import wandb
 import transformers
 from module import CQAModel
 from transformers import BertTokenizer
-from train_utils import train
-from extract_feature import *
+from train_utils_quac import train
+from extract_feature_quac import *
 from utils import *
 
 def main():

@@ -5,15 +5,13 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import trange
 import apex
 from apex import amp
-from optimizer_utils import AdamW, get_linear_schedule_with_warmup
 from utils import set_seed
-from preprocess_rc import *
-from eval_utils import *
+from optimizer_utils import *
+from extract_feature_quac import *
+from evaluate_utils_quac import *
 
-import IPython
-import pdb
 
-def train(model, cache_train_file, cache_validation_file, train_args, tokenizer, wandb):  
+def train(model, cache_train_file, cache_validation_file, train_args, tokenizer, wandb):
 
     model = model.to(train_args['device'])
 
@@ -64,7 +62,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
         epochs_trained, int(train_args['epoches']), desc="Epoch", disable=train_args['local_rank'] not in [-1, 0]
     )
     # Added here for reproductibility
-    set_seed(train_args['seed'])
+    #set_seed(train_args['seed'])
 
     BEST_F1 = np.array([0.0, 0.0, 0.0])
     BEST_STEP = np.array([0,0,0])
@@ -91,7 +89,8 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
             }
 
             outputs = model(**inputs)
-            # model outputs are always tuple in transformers (see doc)
+            
+            #model outputs are always tuple in transformers (see doc)
             loss = outputs[0]
 
             if train_args['n_gpu'] > 1:
@@ -129,6 +128,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                     record["loss"] = (tr_loss - logging_loss) / train_args['logging_steps']
                     logging_loss = tr_loss
                     wandb.log(record,step=global_step)
+                    print(record)
 
                     replace_index = None
                     
@@ -146,7 +146,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                         output_dir = os.path.join(train_args['output_dir'], "checkpoint-{}".format(global_step))
                         # Take care of distributed/parallel training
                         model_to_save = model.module if hasattr(model, "module") else model
-                        model_to_save.save_pretrained(output_dir)
+                        model_to_save.save(output_dir)
                         tokenizer.save_pretrained(output_dir)
 
                         torch.save(train_args, os.path.join(output_dir, "training_args.bin"))

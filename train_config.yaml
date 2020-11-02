@@ -1,21 +1,36 @@
 hidden_size: 768
 max_relative_positions: 10
-exp_name: CustomModel_train
-epoches: 30
+exp_name: HistoryQuestionModel-50-quac-noanswer_v2
+epoches: 20
 weight_decay: 0.01
 learning_rate: 0.00005
-warmup_steps: 500
+warmup_steps: 6000
 adam_epsilon: 0.000000000001
-batch_size: 24
-gradient_accumulation_steps: 4
+batch_size: 3
+gradient_accumulation_steps: 8
 local_rank: -1
 seed: 42
 num_labels: 2
+dialog_labels: 2
+fp16: False
+max_grad_norm: 5.0
+logging_steps: 1500
+save_steps: 100000000000
+output_dir: HistoryQuestionModel-50-quac-noanswer_v2
+evaluate_during_training: True
+version_2_with_negative: True
+verbose_logging: True
+max_answer_length: 40
+n_best_size: 20
+null_score_diff_threshold: 0.0
+do_lower_case: True
+train_feature_file: quac_train_file_noanswer_v2
+eval_feature_file: quac_test_file_noanswer_v2
 
 q_config: 
   n_layer: 3
   layer_norm_eps: 0.000000000001
-  intermediate_size: 3072
+  intermediate_size: 768
   hidden_size: 768
   num_attention_heads: 12
   hidden_dropout_prob: 0.1
@@ -28,7 +43,7 @@ p_config:
   n_layer: 3
   layer_norm_eps: 0.000000000001
   hidden_size: 768
-  intermediate_size: 3072
+  intermediate_size: 768
   num_attention_heads: 12
   hidden_dropout_prob: 0.1
   attention_probs_dropout_prob: 0.1
@@ -39,7 +54,7 @@ p_config:
 r_config: 
   n_layer: 3
   layer_norm_eps: 0.000000000001
-  intermediate_size: 3072
+  intermediate_size: 768
   hidden_size: 768
   num_attention_heads: 12
   hidden_dropout_prob: 0.1
