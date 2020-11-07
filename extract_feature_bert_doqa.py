@@ -156,10 +156,10 @@ def convert_examples_to_features(
         if not is_training:
             all_feature_index = torch.arange(all_input_ids.size(0), dtype=torch.long)
             dataset = TensorDataset(
-                all_input_ids, all_attention_masks, all_context_len, all_question_ids, all_question_seg, all_question_attention_masks,all_question_len,all_question_start,all_dialog_act,  all_feature_index, all_cls_index, all_p_mask
+                all_input_ids, all_attention_masks, all_context_len, all_question_ids, all_question_seg, all_question_attention_masks,all_question_len,all_question_start,all_dialog_act, all_cls_index, all_p_mask, all_feature_index
             )
         else:
-
+            all_feature_index = torch.arange(all_input_ids.size(0), dtype=torch.long)
             all_start_positions = torch.tensor([f.start_position for f in features],dtype=torch.long)
             all_end_positions = torch.tensor([f.end_position for f in features],dtype=torch.long)
             dataset = TensorDataset(
@@ -174,6 +174,7 @@ def convert_examples_to_features(
                 all_dialog_act,
                 all_start_positions,
                 all_end_positions,
+                all_feature_index,
                 all_cls_index,
                 all_p_mask,
                 all_is_impossible,
@@ -544,13 +545,10 @@ def convert_dataset_to_examples(datasets, mode):
         answer_text = None
         answers = []
         
-        if data['orig_answer']['text'][0] == "CANNOTANSWER":
-            is_impossible = True
-        else:
-            is_impossible = False
-            answer_text = data['answers']['text'][0]
-            start_position_character = data["answers"]['answer_start'][0]
-            answers = data["answers"]
+        is_impossible = False
+        answer_text = data['answers']['text'][0]
+        start_position_character = data["answers"]['answer_start'][0]
+        answers = data["answers"]
 
         num = data['id'].split("#")[-1]
 
@@ -558,12 +556,30 @@ def convert_dataset_to_examples(datasets, mode):
         if eval(num) != 0:
             previous = -eval(num)
 
+            # for i in range(previous,1,1):
+            #     history = datasets[mode][index+i]
+            #     if i !=0:
+            #         question = question + history['question'] + " " + "[SEP]" + " " + history['answers']['text'][0] + " " +"[SEP]" + " "
+            #     else:
+            #         question = question + history['question'] + " " +"[SEP]"
+            
+            
             for i in range(previous,1,1):
                 history = datasets[mode][index+i]
                 if i !=0:
-                    question = question + history['question'] + " " + history['answers']['text'][0] + " [SEP] "
+                    question = question + history['question'] + " " + history['answers']['text'][0] + " " +"[SEP]" + " "
                 else:
                     question = question + history['question'] + " " +"[SEP]"
+            
+            # for i in range(previous,1,1):
+            #     history = datasets[mode][index+i]
+            #     if i !=0:
+            #         continue
+            #         #question = question + history['question'] + " " + history['answers']['text'][0] + " " +"[SEP]" + " "
+            #     else:
+            #         question = question + history['question'] + " " +"[SEP]"
+ 
+
 
             dialog_act = 1 if datasets[mode][index-1]['followup'] == 'y' else 0
         else:
@@ -675,25 +691,31 @@ class RCResult:
 
 
 
-def extract_feature(dataset, mode, tokenizer):
-    pass
-
-
-
-if __name__ == "__main__":
-    is_training = False
-    stride = 128
-    mode = "test"
-    dataset = load_dataset("doqa", "cooking",cache_dir="./doqa")
-    cached_features_file = "doqa_test_file_cooking_noanswer_v2"
+def extract_and_save_feature(dataset, mode, tokenizer, is_training, name, ratio, is_dev):
     
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-            
     examples = convert_dataset_to_examples(dataset,mode)
+
+    if mode == "train":
+        train_sample = int(ratio * len(examples))
+        if not is_dev:
+            examples = examples[:train_sample]
+        else:
+            examples = examples[train_sample:]
 
     features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, doc_stride=stride,  is_training=is_training)
 
     torch.save(
     {"features": features, "dataset": dataset, "examples": examples},
-    cached_features_file,
+    name,
     )
+
+if __name__ == "__main__":
+    is_training = False
+    stride = 128
+    mode = "test"
+    is_dev = False
+    ratio = 0.9
+    dataset = load_dataset("doqa", "cooking",cache_dir="./doqa")
+    cached_features_file = "sep_doqa/doqa_test_file_cooking"
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+    extract_and_save_feature(dataset, mode, tokenizer, is_training, cached_features_file, ratio=ratio, is_dev=is_dev)

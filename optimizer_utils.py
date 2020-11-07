@@ -203,8 +203,8 @@ class AdamW(Optimizer):
         self,
         params: Iterable[torch.nn.parameter.Parameter],
         lr: float = 1e-3,
-        betas: Tuple[float, float] = (0.9, 0.999),
-        eps: float = 1e-9,
+        betas: Tuple[float, float] = (0.8, 0.999),
+        eps: float = 1e-7,
         weight_decay: float = 0.0,
         correct_bias: bool = True,
     ):

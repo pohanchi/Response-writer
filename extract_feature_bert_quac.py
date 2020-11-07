@@ -19,8 +19,7 @@ from enum import Enum
 from multiprocessing import Pool, cpu_count
 from functools import partial
 from torch.nn.utils.rnn import pad_sequence 
-
-
+from tqdm import trange
 logger = logging
 
 import torch
@@ -110,7 +109,7 @@ def convert_examples_to_features(
 
         features = list(
             tqdm(
-                p.imap(annotate_, examples, chunksize=8),
+                p.imap(annotate_, examples, chunksize=16),
                 total=len(examples),
                 desc="convert examples to features",
                 disable=not tqdm_enabled,
@@ -120,7 +119,6 @@ def convert_examples_to_features(
     new_features = []
     unique_id = 1000000000
     example_index = 0
-
 
     for example_features in tqdm(
         features, total=len(features), desc="add example index and unique id", disable=not tqdm_enabled
@@ -248,21 +246,6 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
         question_seg = np.zeros_like(np.array(truncated_query))
         seg_value = [ 1, -1, -2 ]
 
-        # for i in range(len(indexes)-1):
-        #     if i < 3:
-        #         if i+1 == (len(indexes)-1):
-        #             question_seg[1:indexes[i]+1] = seg_value[i]
-        #         else:
-        #             question_seg[indexes[i+1]+1:indexes[i]+1] = seg_value[i]
-        #     else:
-        #         if i+1 == (len(indexes)-1):
-        #             question_seg[1:indexes[i]+1] = 0
-        #         else:
-        #             question_seg[indexes[i+1]:indexes[i]+1] = 0
-        #     if i == 0:
-        #         question_start = indexes[i+1]+1
-        #         question_len = indexes[0]+1
-        # seg_value = [ 0, 1]
         for i in range(len(indexes)-1):
             if i < 3:
                 if i+1 == (len(indexes)-1):
@@ -479,7 +462,7 @@ class RCExample:
         context_text: The context string
         answer_text: The answer string
         start_position_character: The character position of the start of the answer
-        title: The title of the example
+        title: The title of the exampleconvert_examples_to_features
         answers: None by default, this is used during evaluation. Holds answers as well as their start positions.
         is_impossible: False by default, set to True if the example has no possible answer.
     """
@@ -492,7 +475,6 @@ class RCExample:
         dialog_act,
         answer_text,
         start_position_character,
-        title,
         answers=[],
         is_impossible=False,
     ):
@@ -500,7 +482,6 @@ class RCExample:
         self.question_text = question_text
         self.context_text = context_text
         self.answer_text = answer_text
-        self.title = title
         self.is_impossible = is_impossible
         self.dialog_act = dialog_act
         self.answers = answers
@@ -537,20 +518,18 @@ def convert_dataset_to_examples(datasets, mode):
     
     examples = []
     
-    for index in range(len(datasets[mode])):
+    for index in trange(len(datasets[mode])):
         data = datasets[mode][index]
 
         start_position_character = None
         answer_text = None
         answers = []
-        
-        if data['orig_answer']['text'][0] == "CANNOTANSWER":
-            is_impossible = True
-        else:
-            is_impossible = False
-            answer_text = data['answers']['text'][0]
-            start_position_character = data["answers"]['answer_start'][0]
-            answers = data["answers"]
+
+        is_impossible = False
+        answer = data['answers'][0]
+        answer_text = answer['text']
+        start_position_character = answer['answer_start']
+        answers = data["answers"]
 
         num = data['id'].split("#")[-1]
 
@@ -561,9 +540,10 @@ def convert_dataset_to_examples(datasets, mode):
             for i in range(previous,1,1):
                 history = datasets[mode][index+i]
                 if i !=0:
-                    question = question + history['question'] + " " + history['answers']['text'][0] + " [SEP] "
+                    question = question + history['question'] + " " + "[SEP]" + " " + history['orig_answer']['text'] + " " +"[SEP]" + " "
                 else:
                     question = question + history['question'] + " " +"[SEP]"
+            
 
             dialog_act = 1 if datasets[mode][index-1]['followup'] == 'y' else 0
         else:
@@ -576,7 +556,6 @@ def convert_dataset_to_examples(datasets, mode):
                             dialog_act=dialog_act,
                             answer_text=answer_text,
                             start_position_character=start_position_character, 
-                            title=data['title'],
                             is_impossible=is_impossible,
                             answers=answers)
     
@@ -672,24 +651,39 @@ class RCResult:
             self.end_top_index = end_top_index
             self.cls_logits = cls_logits
 
+def extract_and_save_feature(dataset_dict, mode, tokenizer, is_training, name):
+
+    features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, doc_stride=stride,  is_training=is_training)
+
+    torch.save(
+    {"features": features, "dataset": dataset, "examples": examples},
+    name,
+    )
 
 
+if __name__ == '__main__':
 
-def extract_feature(dataset, mode, tokenizer):
-    pass
-
-
-
-if __name__ == "__main__":
-    is_training = False
-    stride = 128
     mode = "test"
-    dataset = load_dataset("doqa", "cooking",cache_dir="./doqa")
-    cached_features_file = "doqa_test_file_cooking_noanswer_v2"
+    name = "quac/val_v0.2.json"
+    is_training = False
+    dataset_raw = []
+    stride = 128
+    cached_features_file = "quac_test_file_extra"
     
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-            
-    examples = convert_dataset_to_examples(dataset,mode)
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased") 
+    data = json.load(open(name))['data']
+    dataset_dict = {mode:None}
+
+    for pa_pairs in data:
+        context_pa_pair = pa_pairs['paragraphs'][0]
+        context = context_pa_pair['context']
+        for qa_pairs in context_pa_pair['qas']:
+            qa_pairs.update({'context': context})
+            dataset_raw.append(qa_pairs)
+
+    dataset_dict[mode] = dataset_raw
+
+    examples = convert_dataset_to_examples(dataset_dict,mode)
 
     features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, doc_stride=stride,  is_training=is_training)
 
@@ -697,3 +691,4 @@ if __name__ == "__main__":
     {"features": features, "dataset": dataset, "examples": examples},
     cached_features_file,
     )
+
