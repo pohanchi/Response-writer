@@ -433,8 +433,6 @@ def compute_predictions_logits(
                     null_start_logit = result.start_logits[0]
                     null_end_logit = result.end_logits[0]
             
-            # IPython.embed()
-            # pdb.set_trace()
 
             for start_index in start_indexes:
                 for end_index in end_indexes:
