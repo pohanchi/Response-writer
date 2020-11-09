@@ -376,7 +376,7 @@ class BertSelfAttentionRelative(nn.Module):
                 "heads (%d)" % (config.hidden_size, config.num_attention_heads)
             )
         config.pos_att_type = "c2plp2c"
-        config.relative_attention = False
+        config.relative_attention = True
         self.num_attention_heads = config.num_attention_heads
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size

@@ -1060,18 +1060,18 @@ class BERTQA2(nn.Module):
             q_item = q_ids[i][:q_len[i]]
             c_item = c_ids[i][:c_len[i]]
 
-            cls_symbol = torch.nonzero((q_item==102),as_tuple=False)
+            sep_symbol = torch.nonzero((q_item==102),as_tuple=False)
 
             q_seg = torch.zeros_like(q_item).fill_(1)
 
-            if len(cls_symbol) == 1:
-                pass
-            else:
-                for i in range(0,len(cls_symbol),2):
-                    if i == len(cls_symbol)- 1:
-                        pass
-                    else:
-                        q_seg[cls_symbol[i][0]+1:cls_symbol[i+1][0]+1] = 0
+            # if len(sep_symbol) == 1:
+            #     pass
+            # else:
+            #     for i in range(0,len(sep_symbol),2):
+            #         if i == len(sep_symbol)- 1:
+            #             pass
+            #         else:
+            #             q_seg[sep_symbol[i][0]+1:sep_symbol[i+1][0]+1] = 0
             
 
             c_seg = torch.zeros_like(c_item).fill_(0)
