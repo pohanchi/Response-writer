@@ -1,0 +1,6 @@
+domain: "travel"
+mode: "test"
+is_dev: false
+is_training: false
+ratio: 1
+output_name: bert/sep_doqa/doqa_test_file_travel
