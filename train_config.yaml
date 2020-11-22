@@ -1,9 +1,9 @@
 hidden_size: 768
 max_relative_positions: 10
-exp_name: HistoryQuestionModel-50-quac-noanswer_v2
+exp_name: HistoryQuestionModel-20-cooking-save_v1
 epoches: 20
 weight_decay: 0.01
-learning_rate: 0.00005
+learning_rate: 0.001
 warmup_steps: 6000
 adam_epsilon: 0.000000000001
 batch_size: 3
@@ -16,7 +16,7 @@ fp16: False
 max_grad_norm: 5.0
 logging_steps: 1500
 save_steps: 100000000000
-output_dir: HistoryQuestionModel-50-quac-noanswer_v2
+output_dir: HistoryQuestionModel-20-cooking-noanswer_v2
 evaluate_during_training: True
 version_2_with_negative: True
 verbose_logging: True
@@ -24,8 +24,8 @@ max_answer_length: 40
 n_best_size: 20
 null_score_diff_threshold: 0.0
 do_lower_case: True
-train_feature_file: quac_train_file_noanswer_v2
-eval_feature_file: quac_test_file_noanswer_v2
+train_feature_file: doqa_train_file_cooking_noanswer_v2_extra
+eval_feature_file: doqa_test_file_cooking_noanswer_v2
 
 q_config: 
   n_layer: 3

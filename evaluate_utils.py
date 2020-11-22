@@ -2,13 +2,14 @@ import torch
 import os
 import logging
 import timeit
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler,SubsetRandomSampler
 from extract_feature import *
 from metrics.RC_metrics import *
 from utils import *
 
 
 def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
+    
     preprocess= torch.load(eval_file)
     features, dataset, examples = preprocess['features'], preprocess['dataset'], preprocess['examples']
 
@@ -17,6 +18,8 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
 
     train_args['eval_batch_size'] = train_args['batch_size']
     # Note that DistributedSampler samples randomly
+
+
     eval_sampler = SequentialSampler(dataset)
     eval_dataloader = DataLoader(dataset, sampler=eval_sampler, batch_size=train_args['eval_batch_size'])
 
@@ -52,13 +55,15 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
                 "end_positions": None
             }
 
-            feature_indices = batch[9]
+
+            feature_indices = batch[11]
 
             # XLNet and XLM use more arguments for their predictions
 
             outputs = model(**inputs)
 
         for i, feature_index in enumerate(feature_indices):
+
             eval_feature = features[feature_index.item()]
             unique_id = int(eval_feature.unique_id)
 
@@ -70,8 +75,6 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
 
             all_results.append(result)
     
-    # IPython.embed()
-    # pdb.set_trace()
 
     evalTime = timeit.default_timer() - start_time
     logger.info("  Evaluation done in total %f secs (%f sec per example)", evalTime, evalTime / len(dataset))

@@ -1,0 +1,4 @@
+saved_directory: ../../bigdata/CQAModel/all_sep_dev_in_training
+checkpoint_step: 1900
+eval_file: all_sep_doqa/doqa_test_file_travel
+exp_name: eval_travel_result_all_sep

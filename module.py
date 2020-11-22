@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torch.nn as nn
-from transformers import BertModel
+from transformers import BertModel, BertModelRelative, AlbertModelRelative
 from torch.nn.utils.rnn import pad_sequence
 from argparse import Namespace
 from torch.nn import Linear, Dropout
@@ -696,10 +696,10 @@ class PassageEncoder(nn.Module):
         self.model = TransformerEncoder(layer,config.n_layer,config)
         self.LayerNorm = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
     def forward(self, token_embed, attention_mask, relative_embed):
-         embedding = self.LayerNorm(token_embed)
-         out = self.model(embedding, attention_mask, relative_embed)
+        embedding = self.LayerNorm(token_embed)
+        out = self.model(embedding, attention_mask, relative_embed)
 
-         return out
+        return out
 
 
 class ReasonNet(nn.Module):
@@ -831,7 +831,6 @@ class CQAModel(nn.Module):
         start_logits, end_logits = logits.split(1, dim=-1)
         start_logits = start_logits.squeeze(-1)
         end_logits = end_logits.squeeze(-1)
-
 
         total_loss = None
         if start_positions is not None and end_positions is not None:
@@ -965,17 +964,244 @@ class CQAModel(nn.Module):
             attention_mask[i][:,c_len[i]:, :c_len[i] ] = -10000 
 
 
+class BERTQA(nn.Module):
+    def __init__(self, config):
+        super(BERTQA, self).__init__()
+
+        #BERT layer, n_dim, nhead
+        config = Namespace(**config)
+
+        self.pretrained_model = BertModelRelative.from_pretrained("bert-base-uncased")
+        self.qa_output = nn.Linear(config.hidden_size, config.num_labels)
+        self.dialog_output = nn.Linear(config.hidden_size, config.dialog_labels)
+        self.dialog_loss_fct = nn.CrossEntropyLoss()
+
+    def forward(self,q_ids, q_segs, q_att_masks, q_start, q_len, c_ids, c_att_masks, c_len, dialog_act,start_positions, end_positions):
+
+        reason_input = []
+        seg_input = []
+        mask_input = []
+
+
+        for i in range(len(q_ids)):
+            q_item = q_ids[i][q_start[i]:q_len[i]]
+            c_item = c_ids[i][:c_len[i]]
+
+            q_seg = torch.zeros_like(q_item).fill_(1)
+            c_seg = torch.zeros_like(c_item).fill_(0)
+            seg_input.append(torch.cat([c_seg,q_seg],dim=0))
+            mask_input.append(torch.ones_like(torch.cat([c_seg,q_seg],dim=0)))
+            reason_input.append(torch.cat([c_item,q_item],dim=0))
+
+        reason_mask= pad_sequence(mask_input, batch_first=True)
+        reason_ids = pad_sequence(reason_input, batch_first=True)
+        reason_seg = pad_sequence(seg_input,batch_first=True)
+
+        input_args = {
+            "input_ids": reason_ids,
+            "attention_mask": reason_mask,
+            "token_type_ids": reason_seg,
+        }
+
+        last_reps = self.pretrained_model(**input_args)
+
+        logits = self.qa_output(last_reps[0])
+
+        prediction=self.dialog_output(last_reps[1])
+        dialog_loss = self.dialog_loss_fct(prediction, dialog_act)
+
+        start_logits, end_logits = logits.split(1, dim=-1)
+        start_logits = start_logits.squeeze(-1)
+        end_logits = end_logits.squeeze(-1)
+
+
+        total_loss = None
+        if start_positions is not None and end_positions is not None:
+            # If we are on multi-GPU, split add a dimension
+            if len(start_positions.size()) > 1:
+                start_positions = start_positions.squeeze(-1)
+            if len(end_positions.size()) > 1:
+                end_positions = end_positions.squeeze(-1)
+            # sometimes the start/end positions are outside our model inputs, we ignore these terms
+            ignored_index = start_logits.size(1)
+            start_positions.clamp_(0, ignored_index)
+            end_positions.clamp_(0, ignored_index)
+
+            loss_fct = nn.CrossEntropyLoss(ignore_index=ignored_index)
+            start_loss = loss_fct(start_logits, start_positions)
+            end_loss = loss_fct(end_logits, end_positions)
+            total_loss = (start_loss + end_loss  + dialog_loss ) /3
+
+        output = (start_logits, end_logits)
+        return ((total_loss,) + output) if total_loss is not None else output
 
 
 
-        
 
-        
+class BERTQA2(nn.Module):
+    def __init__(self, config):
+        super(BERTQA2, self).__init__()
+
+        #BERT layer, n_dim, nhead
+        config = Namespace(**config)
+
+        self.pretrained_model = BertModelRelative.from_pretrained("bert-base-uncased")
+        self.qa_output = nn.Linear(config.hidden_size, config.num_labels)
+        self.dialog_output = nn.Linear(config.hidden_size, config.dialog_labels)
+        self.dialog_loss_fct = nn.CrossEntropyLoss()
+
+    def forward(self,q_ids, q_segs, q_att_masks, q_start, q_len, c_ids, c_att_masks, c_len, dialog_act,start_positions, end_positions):
+
+        reason_input = []
+        seg_input = []
+        mask_input = []
+
+        for i in range(len(q_ids)):
+            q_item = q_ids[i][:q_len[i]]
+            c_item = c_ids[i][:c_len[i]]
+
+            sep_symbol = torch.nonzero((q_item==102),as_tuple=False)
+
+            q_seg = torch.zeros_like(q_item).fill_(1)
+
+            # if len(sep_symbol) == 1:
+            #     pass
+            # else:
+            #     for i in range(0,len(sep_symbol),2):
+            #         if i == len(sep_symbol)- 1:
+            #             pass
+            #         else:
+            #             q_seg[sep_symbol[i][0]+1:sep_symbol[i+1][0]+1] = 0
+            
+
+            c_seg = torch.zeros_like(c_item).fill_(0)
+            seg_input.append(torch.cat([c_seg,q_seg],dim=0))
+            mask_input.append(torch.ones_like(torch.cat([c_seg,q_seg],dim=0)))
+            reason_input.append(torch.cat([c_item,q_item],dim=0))
+
+        reason_mask= pad_sequence(mask_input, batch_first=True)
+        reason_ids = pad_sequence(reason_input, batch_first=True)
+        reason_seg = pad_sequence(seg_input,batch_first=True)
+
+        input_args = {
+            "input_ids": reason_ids,
+            "attention_mask": reason_mask,
+            "token_type_ids": reason_seg,
+        }
+
+        last_reps = self.pretrained_model(**input_args)
+
+        logits = self.qa_output(last_reps[0])
+
+        prediction=self.dialog_output(last_reps[1])
+        dialog_loss = self.dialog_loss_fct(prediction, dialog_act)
+
+        start_logits, end_logits = logits.split(1, dim=-1)
+        start_logits = start_logits.squeeze(-1)
+        end_logits = end_logits.squeeze(-1)
 
 
-        
-        
+        total_loss = None
+        if start_positions is not None and end_positions is not None:
+            # If we are on multi-GPU, split add a dimension
+            if len(start_positions.size()) > 1:
+                start_positions = start_positions.squeeze(-1)
+            if len(end_positions.size()) > 1:
+                end_positions = end_positions.squeeze(-1)
+            # sometimes the start/end positions are outside our model inputs, we ignore these terms
+            ignored_index = start_logits.size(1)
+            start_positions.clamp_(0, ignored_index)
+            end_positions.clamp_(0, ignored_index)
+
+            loss_fct = nn.CrossEntropyLoss(ignore_index=ignored_index)
+            start_loss = loss_fct(start_logits, start_positions)
+            end_loss = loss_fct(end_logits, end_positions)
+            total_loss = (start_loss + end_loss  + dialog_loss ) /3
+
+        output = (start_logits, end_logits)
+        return ((total_loss,) + output) if total_loss is not None else output
 
 
 
-        
+class ALBERTQA2(nn.Module):
+    def __init__(self, config):
+        super(ALBERTQA2, self).__init__()
+
+        #BERT layer, n_dim, nhead
+        config = Namespace(**config)
+
+        self.pretrained_model = AlbertModelRelative.from_pretrained("albert-base-v2")
+        self.qa_output = nn.Linear(config.hidden_size, config.num_labels)
+        self.dialog_output = nn.Linear(config.hidden_size, config.dialog_labels)
+        self.dialog_loss_fct = nn.CrossEntropyLoss()
+
+    def forward(self,q_ids, q_segs, q_att_masks, q_start, q_len, c_ids, c_att_masks, c_len, dialog_act,start_positions, end_positions):
+
+        reason_input = []
+        seg_input = []
+        mask_input = []
+
+        for i in range(len(q_ids)):
+            q_item = q_ids[i][:q_len[i]]
+            c_item = c_ids[i][:c_len[i]]
+
+            cls_symbol = torch.nonzero((q_item==102),as_tuple=False)
+
+            q_seg = torch.zeros_like(q_item).fill_(1)
+
+            if len(cls_symbol) == 1:
+                pass
+            else:
+                for i in range(0,len(cls_symbol),2):
+                    if i == len(cls_symbol)- 1:
+                        pass
+                    else:
+                        q_seg[cls_symbol[i][0]+1:cls_symbol[i+1][0]+1] = 0
+            
+
+            c_seg = torch.zeros_like(c_item).fill_(0)
+            seg_input.append(torch.cat([c_seg,q_seg],dim=0))
+            mask_input.append(torch.ones_like(torch.cat([c_seg,q_seg],dim=0)))
+            reason_input.append(torch.cat([c_item,q_item],dim=0))
+
+        reason_mask= pad_sequence(mask_input, batch_first=True)
+        reason_ids = pad_sequence(reason_input, batch_first=True)
+        reason_seg = pad_sequence(seg_input,batch_first=True)
+
+        input_args = {
+            "input_ids": reason_ids,
+            "attention_mask": reason_mask,
+            "token_type_ids": reason_seg,
+        }
+
+        last_reps = self.pretrained_model(**input_args)
+
+        logits = self.qa_output(last_reps[0])
+
+        prediction=self.dialog_output(last_reps[1])
+        dialog_loss = self.dialog_loss_fct(prediction, dialog_act)
+
+        start_logits, end_logits = logits.split(1, dim=-1)
+        start_logits = start_logits.squeeze(-1)
+        end_logits = end_logits.squeeze(-1)
+
+
+        total_loss = None
+        if start_positions is not None and end_positions is not None:
+            # If we are on multi-GPU, split add a dimension
+            if len(start_positions.size()) > 1:
+                start_positions = start_positions.squeeze(-1)
+            if len(end_positions.size()) > 1:
+                end_positions = end_positions.squeeze(-1)
+            # sometimes the start/end positions are outside our model inputs, we ignore these terms
+            ignored_index = start_logits.size(1)
+            start_positions.clamp_(0, ignored_index)
+            end_positions.clamp_(0, ignored_index)
+
+            loss_fct = nn.CrossEntropyLoss(ignore_index=ignored_index)
+            start_loss = loss_fct(start_logits, start_positions)
+            end_loss = loss_fct(end_logits, end_positions)
+            total_loss = (start_loss + end_loss  + dialog_loss ) /3
+
+        output = (start_logits, end_logits)
+        return ((total_loss,) + output) if total_loss is not None else output

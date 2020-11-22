@@ -247,6 +247,7 @@ if is_torch_available():
         AlbertForTokenClassification,
         AlbertModel,
         AlbertPreTrainedModel,
+        AlbertModelRelative,
         load_tf_weights_in_albert,
     )
     from .modeling_auto import (
@@ -291,6 +292,7 @@ if is_torch_available():
         BertLayer,
         BertLMHeadModel,
         BertModel,
+        BertModelRelative,
         BertPreTrainedModel,
         load_tf_weights_in_bert,
     )

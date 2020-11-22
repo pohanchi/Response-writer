@@ -241,13 +241,28 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
         question_seg[1:indexes[0][-1]+1] = 1
         question_seg = question_seg.tolist()
         question_start = 1
-        question_len = indexes[0][-1]
+        question_len = indexes[0][-1]+1
 
     else:
         indexes = indexes[0][::-1]
         question_seg = np.zeros_like(np.array(truncated_query))
         seg_value = [ 1, -1, -2 ]
 
+        # for i in range(len(indexes)-1):
+        #     if i < 3:
+        #         if i+1 == (len(indexes)-1):
+        #             question_seg[1:indexes[i]+1] = seg_value[i]
+        #         else:
+        #             question_seg[indexes[i+1]+1:indexes[i]+1] = seg_value[i]
+        #     else:
+        #         if i+1 == (len(indexes)-1):
+        #             question_seg[1:indexes[i]+1] = 0
+        #         else:
+        #             question_seg[indexes[i+1]:indexes[i]+1] = 0
+        #     if i == 0:
+        #         question_start = indexes[i+1]+1
+        #         question_len = indexes[0]+1
+        # seg_value = [ 0, 1]
         for i in range(len(indexes)-1):
             if i < 3:
                 if i+1 == (len(indexes)-1):
@@ -666,11 +681,11 @@ def extract_feature(dataset, mode, tokenizer):
 
 
 if __name__ == "__main__":
-    is_training = True
-    dataset = "quac"
+    is_training = False
     stride = 128
-    mode = "train"
-    cached_features_file = "quac_train_file_noanswer_v2"
+    mode = "test"
+    dataset = load_dataset("doqa", "cooking",cache_dir="./doqa")
+    cached_features_file = "doqa_test_file_cooking_noanswer_v2"
     
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
             

@@ -5,9 +5,12 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import trange
 import apex
 from apex import amp
-from optimizer_utils import AdamW, get_sqrt_decay_schedule_with_warmup
+from sklearn.model_selection import train_test_split
+from torch.utils.data import Subset
 from utils import set_seed
+from optimizer_utils import *
 from extract_feature import *
+from evaluate_utils import *
 
 
 def train(model, cache_train_file, cache_validation_file, train_args, tokenizer, wandb):
@@ -15,6 +18,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
     model = model.to(train_args['device'])
 
     preprocess = torch.load(cache_train_file)
+
     train_feature, train_dataset, train_examples = preprocess['features'], preprocess['dataset'], preprocess['examples']
 
     train_sampler = RandomSampler(train_dataset)
@@ -33,7 +37,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
     ]
     
     optimizer = AdamW(optimizer_grouped_parameters, lr=train_args['learning_rate'], eps=train_args['adam_epsilon'])
-    scheduler = get_sqrt_decay_schedule_with_warmup(
+    scheduler = get_constant_decay_schedule_with_warmup(
         optimizer, num_warmup_steps=train_args['warmup_steps'], num_training_steps=t_total
     )
 
@@ -60,11 +64,9 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
     train_iterator = trange(
         epochs_trained, int(train_args['epoches']), desc="Epoch", disable=train_args['local_rank'] not in [-1, 0]
     )
-    # Added here for reproductibility
-    set_seed(train_args['seed'])
 
-    BEST_F1 = np.array([0.0, 0.0, 0.0])
-    BEST_STEP = np.array([0,0,0])
+    BEST_F1 = np.array([0.0])
+    BEST_STEP = np.array([0])
 
     for _ in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=train_args['local_rank'] not in [-1, 0])
@@ -83,11 +85,12 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                 "q_len": batch[6],
                 "q_start": batch[7],
                 "dialog_act": batch[8],
-                "start_positions": batch[9],
-                "end_positions": batch[10],
+                "start_positions":batch[9],
+                "end_positions": batch[10]
             }
 
             outputs = model(**inputs)
+            
             #model outputs are always tuple in transformers (see doc)
             loss = outputs[0]
 
@@ -126,6 +129,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                     record["loss"] = (tr_loss - logging_loss) / train_args['logging_steps']
                     logging_loss = tr_loss
                     wandb.log(record,step=global_step)
+                    print(record)
 
                     replace_index = None
                     
@@ -138,17 +142,23 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                             BEST_STEP[replace_index] = global_step
 
 
-                    # Save model checkpoint
-                    if train_args['local_rank'] in [-1, 0] and train_args['save_steps'] > 0 and global_step % train_args['save_steps'] == 0 and replace_index is not None:
-                        output_dir = os.path.join(train_args['output_dir'], "checkpoint-{}".format(global_step))
-                        # Take care of distributed/parallel training
-                        model_to_save = model.module if hasattr(model, "module") else model
-                        model_to_save.save_pretrained(output_dir)
-                        tokenizer.save_pretrained(output_dir)
-
-                        torch.save(train_args, os.path.join(output_dir, "training_args.bin"))
-                        logger.info("Saving model checkpoint to %s", output_dir)
-
-                        torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
-                        torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
-                        logger.info("Saving optimizer and scheduler states to %s", output_dir)
+                        # Save model checkpoint
+                        if train_args['local_rank'] in [-1, 0] and train_args['save_steps'] > 0 and global_step % train_args['save_steps'] == 0 and replace_index is not None:
+                            output_dir = os.path.join(train_args['output_dir'], "checkpoint-{}".format(global_step))
+                            # Take care of distributed/parallel training
+                            json_file = os.path.join(output_dir, "record.json")
+                            config_file = os.path.join(output_dir, "model_config.json")
+                            if not os.path.exists(output_dir):
+                                os.makedirs(output_dir)
+                            torch.save(model.state_dict(), os.path.join(output_dir, "model.pt"))
+                            train_args['device'] = None
+                            json.dump(train_args, open(config_file, "w"), indent=4)
+                            train_args['device'] = torch.device("cuda")
+                            tokenizer.save_pretrained(output_dir)
+                            
+                            torch.save(train_args, os.path.join(output_dir, "training_args.bin"))
+                            logger.info("Saving model checkpoint to %s", output_dir)
+                            json.dump(record, open(json_file, "w"), indent=4)
+                            torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
+                            torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
+                            logger.info("Saving optimizer and scheduler states to %s", output_dir)
