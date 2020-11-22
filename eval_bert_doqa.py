@@ -7,7 +7,7 @@ import wandb
 import IPython
 import pdb
 import transformers
-from module import CQAModel, BERTQA, BERTQA2
+from module import BERTQA_no_cross_att, BERTQA_cross_att, BERTQA_initial, BERTQA_memory
 from transformers import BertTokenizer
 from evaluate_utils import evaluate 
 from extract_feature import *
@@ -20,20 +20,23 @@ def main():
     args = parser.parse_args()
     eval_config = yaml.safe_load(open(args.config,"r"))
 
-
     saved_directory = eval_config['saved_directory']
+    sub_directory_list = [x[0] for x in os.walk(saved_directory)]
+    sub_directory_list = sub_directory_list[1:]
+    numbers = [int(x.split("checkpoint-")[-1]) for x in sub_directory_list]
+    checkpoint_step_str = str(max(numbers))
+    eval_config['checkpoint_step'] = checkpoint_step_str
     checkpoint_step = "checkpoint-{}".format(eval_config['checkpoint_step'])
-
     dir_path = os.path.join(saved_directory, checkpoint_step)
     config = torch.load(os.path.join(dir_path,"training_args.bin"))
-    
+
     set_seed(config['seed'])
-    model = BERTQA2(config)
-    model.load_state_dict(torch.load(os.path.join(dir_path, "model.pt"), map_location="cpu"))
+    model = eval(config['model'])(config)
+    model.load_state_dict(torch.load(os.path.join(dir_path, "model.pt"), map_location="cpu"),strict=False)
 
     tokenizer = BertTokenizer.from_pretrained(dir_path)
 
-    wandb.init(project="doqa_eval", name=eval_config['exp_name'])
+    wandb.init(project="doqa_eval_twcc", name=eval_config['exp_name'])
     wandb.config.update(config)
 
     config['device'] = torch.device("cuda")
