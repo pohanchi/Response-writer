@@ -19,7 +19,8 @@ from enum import Enum
 from multiprocessing import Pool, cpu_count
 from functools import partial
 from torch.nn.utils.rnn import pad_sequence 
-
+import argparse
+import yaml
 
 logger = logging
 
@@ -710,12 +711,13 @@ def extract_and_save_feature(dataset, mode, tokenizer, is_training, name, ratio,
     )
 
 if __name__ == "__main__":
-    is_training = False
-    stride = 128
-    mode = "test"
-    is_dev = False
-    ratio = 0.9
-    dataset = load_dataset("doqa", "cooking",cache_dir="./doqa")
-    cached_features_file = "sep_doqa/doqa_test_file_cooking"
+
+    parser = argparse.ArgumentParser(description='Argument Parser for HistoryQA project.')
+    parser.add_argument("--config")
+    args = parser.parse_args()
+    config = yaml.safe_load(open(args.config,"r"))
+
+    dataset = load_dataset("doqa", config['domain'],cache_dir="./doqa")
+    cached_features_file = config['output_name']
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-    extract_and_save_feature(dataset, mode, tokenizer, is_training, cached_features_file, ratio=ratio, is_dev=is_dev)
+    extract_and_save_feature(dataset, config['mode'], tokenizer, config['is_training'], cached_features_file, ratio=config['ratio'], is_dev=config['is_dev'])
