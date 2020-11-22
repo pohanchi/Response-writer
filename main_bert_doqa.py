@@ -4,7 +4,7 @@ import argparse
 import yaml
 import wandb
 import transformers
-from module import CQAModel, BERTQA, BERTQA2
+from module import BERTQA_no_cross_att, BERTQA_cross_att, BERTQA_initial, BERTQA_memory
 from transformers import BertTokenizer
 from train_utils import train
 from extract_feature import *
@@ -18,11 +18,11 @@ def main():
     config = yaml.safe_load(open(args.config,"r"))
     
     set_seed(config['seed'])
-    model= BERTQA2(config)
+    model= eval(config['model'])(config)
 
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
-    wandb.init(project="doqa", name=config['exp_name'])
+    wandb.init(project="doqa_twcc", name=config['exp_name'])
     wandb.config.update(config)
 
     wandb.watch(model)
