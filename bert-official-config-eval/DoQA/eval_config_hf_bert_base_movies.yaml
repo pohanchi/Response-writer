@@ -1,0 +1,3 @@
+saved_directory: ../CQAModel/DoQA/Bert-base-HF_16/sep-dev-in_training
+eval_file: bert/sep_doqa/doqa_test_file_movies
+exp_name: eval_hf_bert_base_movies
