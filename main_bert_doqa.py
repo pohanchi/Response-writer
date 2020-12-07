@@ -4,25 +4,30 @@ import argparse
 import yaml
 import wandb
 import transformers
-from module import BERTQA_no_cross_att, BERTQA_cross_att, BERTQA_initial, BERTQA_memory
+from module import BERTQA_initial, BERTQA_memory, BERTQA
 from transformers import BertTokenizer
 from train_utils import train
 from extract_feature import *
 from utils import *
+
+# os.environ['WANDB_MODE'] = 'dryrun'
+
 
 def main():
     # model: paragraph, question_answering module
     parser = argparse.ArgumentParser(description='Argument Parser for HistoryQA project.')
     parser.add_argument("--config")
     args = parser.parse_args()
-    config = yaml.safe_load(open(args.config,"r"))
-    
+    config = yaml.safe_load(open(args.config,"r"))    
     set_seed(config['seed'])
     model= eval(config['model'])(config)
 
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+    if "pretrained_name" in list(config.keys()):
+        tokenizer = BertTokenizer.from_pretrained(config['pretrained_name'])
+    else:
+        tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
-    wandb.init(project="doqa_twcc", name=config['exp_name'])
+    wandb.init(project="doqa_battleship_official", name=config['exp_name'])
     wandb.config.update(config)
 
     wandb.watch(model)

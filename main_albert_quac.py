@@ -3,18 +3,20 @@ import torch
 import argparse
 import yaml
 import wandb
-import os
 import transformers
 from module import ALBERTQA_memory, ALBERTQA
-from transformers import AlbertTokenizer
-from train_utils import train
-from extract_feature_albert_doqa import *
+from transformers import BertTokenizer
+from train_utils_quac import train
+from extract_feature_quac import *
 from utils import *
+
 
 # os.environ['WANDB_MODE'] = 'dryrun'
 
+
 def main():
     # model: paragraph, question_answering module
+
     parser = argparse.ArgumentParser(description='Argument Parser for HistoryQA project.')
     parser.add_argument("--config")
     args = parser.parse_args()
@@ -22,13 +24,9 @@ def main():
     
     set_seed(config['seed'])
     model= eval(config['model'])(config)
+    tokenizer = eval(config["pretrained_tokenizer"]).from_pretrained(config["pretrained_name"])
 
-    if "pretrained_name" in list(config.keys()):
-        tokenizer = AlbertTokenizer.from_pretrained(config['pretrained_name'])
-    else:
-        tokenizer = AlbertTokenizer.from_pretrained("albert-base-v2")
-
-    wandb.init(project="doqa_battleship_official", name=config['exp_name'])
+    wandb.init(project="quac_official_twcc", name=config['exp_name'])
     wandb.config.update(config)
 
     wandb.watch(model)

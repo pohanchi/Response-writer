@@ -5,11 +5,12 @@ import yaml
 import wandb
 import os
 import transformers
-from module import ALBERTQA_memory, ALBERTQA
-from transformers import AlbertTokenizer
+from module import RobertaQA_memory, RobertaQA
+from transformers import RobertaTokenizer
 from train_utils import train
-from extract_feature_albert_doqa import *
+from extract_feature_roberta_doqa import *
 from utils import *
+
 
 # os.environ['WANDB_MODE'] = 'dryrun'
 
@@ -23,10 +24,10 @@ def main():
     set_seed(config['seed'])
     model= eval(config['model'])(config)
 
-    if "pretrained_name" in list(config.keys()):
-        tokenizer = AlbertTokenizer.from_pretrained(config['pretrained_name'])
+    if "pretrained_name" not in list(config.keys()):
+        tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
     else:
-        tokenizer = AlbertTokenizer.from_pretrained("albert-base-v2")
+        tokenizer = RobertaTokenizer.from_pretrained(config['pretrained_name'])
 
     wandb.init(project="doqa_battleship_official", name=config['exp_name'])
     wandb.config.update(config)

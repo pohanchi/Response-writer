@@ -9,8 +9,8 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Subset
 from utils import set_seed
 from optimizer_utils import *
-from extract_feature import *
-from evaluate_utils import *
+from extract_feature_coqa import *
+from evaluate_utils_coqa import *
 
 
 def train(model, cache_train_file, cache_validation_file, train_args, tokenizer, wandb):
@@ -18,6 +18,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
     model = model.to(train_args['device'])
 
     preprocess = torch.load(cache_train_file)
+
     train_feature, train_dataset, train_examples = preprocess['features'], preprocess['dataset'], preprocess['examples']
 
     train_sampler = RandomSampler(train_dataset)
@@ -35,7 +36,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
     ]
     
-    optimizer = AdamW(optimizer_grouped_parameters, betas=(train_args['adam_beta1'],train_args["adam_beta2"]),lr=train_args['learning_rate'], eps=train_args['adam_epsilon'])
+    optimizer = AdamW(optimizer_grouped_parameters, lr=train_args['learning_rate'], eps=train_args['adam_epsilon'])
     scheduler = get_constant_decay_schedule_with_warmup(
         optimizer, num_warmup_steps=train_args['warmup_steps'], num_training_steps=t_total
     )
@@ -74,6 +75,8 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
             model.train()
             batch = tuple(t.to(train_args['device']) for t in batch)
 
+            IPython.embed()
+            pdb.set_trace()
             inputs = {
                 "c_ids": batch[0],
                 "c_att_masks": batch[1],
@@ -85,10 +88,11 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                 "q_start": batch[7],
                 "dialog_act": batch[8],
                 "start_positions":batch[9],
-                "end_positions": batch[10],
+                "end_positions": batch[10]
             }
 
             outputs = model(**inputs)
+            
             #model outputs are always tuple in transformers (see doc)
             loss = outputs[0]
 
@@ -131,12 +135,12 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
 
                     replace_index = None
                     
-                    if np.sum(BEST_F1 < (record['eval_f1'])) > 0:
-                        if len(np.nonzero(BEST_F1 <  (record['eval_f1']))[0]) > 1:
-                            replace_index = np.nonzero(BEST_F1 <  (record['eval_f1']))[0][0]
+                    if np.sum(BEST_F1 < record['eval_f1']) > 0:
+                        if len(np.nonzero(BEST_F1 < record['eval_f1'])[0]) > 1:
+                            replace_index = np.nonzero(BEST_F1 < record['eval_f1'])[0][0]
                         else:
-                            replace_index = np.nonzero(BEST_F1 <  (record['eval_f1']))[0]
-                            BEST_F1[replace_index] =  (record['eval_f1'])
+                            replace_index = np.nonzero(BEST_F1 < record['eval_f1'])[0]
+                            BEST_F1[replace_index] = record['eval_f1']
                             BEST_STEP[replace_index] = global_step
 
 

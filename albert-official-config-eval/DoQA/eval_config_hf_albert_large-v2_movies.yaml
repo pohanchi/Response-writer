@@ -1,0 +1,3 @@
+saved_directory: ../CQAModel/DoQA/Albert-large-v2-HF_16/sep-dev-in_training
+eval_file: albert/sep_doqa/doqa_test_file_movies
+exp_name: eval_hf_albert_large-v2_movies
