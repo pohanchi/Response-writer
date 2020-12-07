@@ -51,6 +51,8 @@ from .modeling_utils import (
 )
 from .utils import logging
 
+import IPython
+import pdb
 
 logger = logging.get_logger(__name__)
 
@@ -247,13 +249,13 @@ class AlbertEmbeddingsRelative(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
-        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
-        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
+        self.word_embeddings = nn.Embedding(config.vocab_size, config.embedding_size, padding_idx=config.pad_token_id)
+        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.embedding_size)
+        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.embedding_size)
 
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
         # any TensorFlow checkpoint file
-        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.LayerNorm = nn.LayerNorm(config.embedding_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
         # position_ids (1, len position emb) is contiguous in memory and exported when serialized
@@ -286,6 +288,102 @@ class AlbertEmbeddingsRelative(nn.Module):
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
         return embeddings
+
+
+class AlbertEmbeddingsMemory(nn.Module):
+    """Construct the embeddings from word, position and token_type embeddings."""
+
+    def __init__(self, config):
+        super().__init__()
+        self.word_embeddings = nn.Embedding(config.vocab_size, config.embedding_size, padding_idx=config.pad_token_id)
+        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.embedding_size)
+        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.embedding_size)
+        self.memory_embeddings = nn.Embedding(2, config.embedding_size)
+
+        # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
+        # any TensorFlow checkpoint file
+        self.LayerNorm = nn.LayerNorm(config.embedding_size, eps=config.layer_norm_eps)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        # position_ids (1, len position emb) is contiguous in memory and exported when serialized
+        self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
+
+    def forward(self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, memory_ids=None, memory=False):
+        
+        if memory == False:
+        
+            if input_ids is not None:
+                input_shape = input_ids.size()
+            else:
+                input_shape = inputs_embeds.size()[:-1]
+
+            seq_length = input_shape[1]
+
+            if position_ids is None:
+                if seq_length <= 512:
+                    position_ids = self.position_ids[:, :seq_length]
+                else:
+                    position_ids = torch.arange(seq_length).expand((1, -1)).cuda()
+                    position_ids = position_ids % 512
+
+            if token_type_ids is None:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+
+            if inputs_embeds is None:
+                inputs_embeds = self.word_embeddings(input_ids)
+            position_embeddings = self.position_embeddings(position_ids)
+            token_type_embeddings = self.token_type_embeddings(token_type_ids)
+
+            memory_embeddings =self.memory_embeddings(memory_ids)
+
+            embeddings = inputs_embeds + token_type_embeddings + position_embeddings + memory_embeddings
+            embeddings = self.LayerNorm(embeddings)
+            embeddings = self.dropout(embeddings)
+            return embeddings
+        
+        else:
+
+            if input_ids is not None:
+                input_shape = input_ids.size()
+            else:
+                input_shape = inputs_embeds.size()[:-1]
+
+            seq_length = input_shape[1]
+
+            if position_ids is None:
+                if seq_length <= 512:
+                    position_ids = self.position_ids[:, :seq_length]
+                else:
+                    position_ids = torch.arange(seq_length).expand((1, -1)).cuda()
+                    position_ids = position_ids % 512
+
+            if token_type_ids is None:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+
+            if inputs_embeds is None:
+                inputs_embeds = self.word_embeddings(input_ids)
+            position_embeddings = self.position_embeddings(position_ids)
+
+            diff = (position_embeddings[:,1] - position_embeddings[:,0]) / seq_length
+            init = position_embeddings[:,0].unsqueeze(1).repeat(1,seq_length,1)
+            
+            for j in range(init.shape[1]):
+                init[:,j] = init[:,j] + diff[:]*j  
+            
+            token_type_ids_0 = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+            token_type_ids_1 = torch.ones(input_shape, dtype=torch.long, device=self.position_ids.device)
+
+            token_type_embeddings_0 = self.token_type_embeddings(token_type_ids_0)
+            token_type_embeddings_1 = self.token_type_embeddings(token_type_ids_1)
+
+            token_type_embeddings = (token_type_embeddings_0 + token_type_embeddings_1) / 2
+
+
+            embeddings = inputs_embeds + token_type_embeddings + init
+            embeddings = self.LayerNorm(embeddings)
+            embeddings = self.dropout(embeddings)
+            return embeddings
+
 
 
 def build_relative_position(query_size, key_size, device):
@@ -332,8 +430,7 @@ class AlbertAttentionRelative(nn.Module):
                 "The hidden size (%d) is not a multiple of the number of attention "
                 "heads (%d)" % (config.hidden_size, config.num_attention_heads)
             )
-        config.pos_att_type = "c2plp2c"
-        config.relative_attention = False
+        self.hidden_size = config.hidden_size
         self.num_attention_heads = config.num_attention_heads
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
@@ -351,8 +448,6 @@ class AlbertAttentionRelative(nn.Module):
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.pruned_heads = set()
 
-        config.max_relative_positions = 20
-
         if self.relative_attention:
             self.max_relative_positions = getattr(config, 'max_relative_positions', -1)
             if self.max_relative_positions <1:
@@ -360,9 +455,9 @@ class AlbertAttentionRelative(nn.Module):
             self.pos_dropout = Dropout(config.hidden_dropout_prob)
 
             if 'c2p' in self.pos_att_type or 'p2p' in self.pos_att_type:
-                self.pos_proj = self.key
+                self.pos_proj = nn.Linear(config.embedding_size, config.hidden_size)
             if 'p2c' in self.pos_att_type or 'p2p' in self.pos_att_type:
-                self.pos_q_proj = self.query
+                self.pos_q_proj = nn.Linear(config.embedding_size, config.hidden_size)
 
         self.dropout = Dropout(config.attention_probs_dropout_prob)
 
@@ -395,6 +490,7 @@ class AlbertAttentionRelative(nn.Module):
         hidden_states,
         rel_embeddings,
         attention_mask=None,
+        map_in_fn=None,
         head_mask=None,
         encoder_hidden_states=None,
         encoder_attention_mask=None,
@@ -425,9 +521,9 @@ class AlbertAttentionRelative(nn.Module):
 
         if self.relative_attention:
             relative_pos = None
-            rel_embeddings = rel_embeddings(torch.arange(0,20).cuda())
-            rel_embeddings = self.pos_dropout(rel_embeddings)
-            rel_att = self.disentangled_att_bias(query_layer, key_layer, relative_pos, rel_embeddings, scale_factor)      
+            rel_embedding = rel_embeddings(torch.arange(0,self.max_relative_positions*2).cuda())
+            rel_embedding = self.pos_dropout(rel_embedding)
+            rel_att = self.disentangled_att_bias(query_layer, key_layer, relative_pos, rel_embedding, scale_factor, map_in_fn)      
 
         if self.relative_attention:
             attention_scores = (attention_scores + rel_att)
@@ -464,7 +560,7 @@ class AlbertAttentionRelative(nn.Module):
         layernormed_context_layer = self.LayerNorm(hidden_states + projected_context_layer_dropout)
         return (layernormed_context_layer, attention_probs) if output_attentions else (layernormed_context_layer,)
     
-    def disentangled_att_bias(self, query_layer, key_layer, relative_pos, rel_embeddings, scale_factor):
+    def disentangled_att_bias(self, query_layer, key_layer, relative_pos, rel_embeddings, scale_factor, map_in_fn):
         if relative_pos is None:
             q = query_layer.size(-2)
             relative_pos = build_relative_position(q, key_layer.size(-2), query_layer.device)
@@ -661,9 +757,9 @@ class AlbertLayerRelative(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(
-        self, hidden_states, relative_embeddings, attention_mask=None, head_mask=None, output_attentions=False, output_hidden_states=False
+        self, hidden_states, relative_embeddings, attention_mask=None, map_in_fn=None, head_mask=None, output_attentions=False, output_hidden_states=False
     ):
-        attention_output = self.attention(hidden_states, relative_embeddings,attention_mask, head_mask, output_attentions)
+        attention_output = self.attention(hidden_states, relative_embeddings,attention_mask, map_in_fn, head_mask, output_attentions)
 
         ffn_output = apply_chunking_to_forward(
             self.ff_chunk,
@@ -688,13 +784,13 @@ class AlbertLayerGroupRelative(nn.Module):
         self.albert_layers = nn.ModuleList([AlbertLayerRelative(config) for _ in range(config.inner_group_num)])
 
     def forward(
-        self, hidden_states, relative_embeddings, attention_mask=None, head_mask=None, output_attentions=False, output_hidden_states=False
+        self, hidden_states, relative_embeddings, attention_mask=None, map_in_fn=None, head_mask=None, output_attentions=False, output_hidden_states=False
     ):
         layer_hidden_states = ()
         layer_attentions = ()
 
         for layer_index, albert_layer in enumerate(self.albert_layers):
-            layer_output = albert_layer(hidden_states, relative_embeddings, attention_mask, head_mask[layer_index], output_attentions)
+            layer_output = albert_layer(hidden_states, relative_embeddings, attention_mask, map_in_fn, head_mask[layer_index], output_attentions)
             hidden_states = layer_output[0]
 
             if output_attentions:
@@ -777,6 +873,76 @@ class AlbertTransformerRelative(nn.Module):
                 hidden_states,
                 relative_embeddings,
                 attention_mask,
+                self.embedding_hidden_mapping_in,
+                head_mask[group_idx * layers_per_group : (group_idx + 1) * layers_per_group],
+                output_attentions,
+                output_hidden_states,
+            )
+            hidden_states = layer_group_output[0]
+
+            if output_attentions:
+                all_attentions = all_attentions + layer_group_output[-1]
+
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
+
+        if not return_dict:
+            return tuple(v for v in [hidden_states, all_hidden_states, all_attentions] if v is not None)
+        return BaseModelOutput(
+            last_hidden_state=hidden_states, hidden_states=all_hidden_states, attentions=all_attentions
+        )
+
+
+
+class AlbertTransformerMemory(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+
+        self.config = config
+        self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
+        self.memory_module = AlbertInjectMemory(config)
+        #self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.albert_layer_groups = nn.ModuleList([AlbertLayerGroupRelative(config) for _ in range(config.num_hidden_groups)])
+
+    def forward(
+        self,
+        hidden_states,
+        relative_embeddings,
+        memory,
+        attention_mask=None,
+        memory_attention_mask=None,
+        memory_len=None,
+        input_len=None,
+        head_mask=None,
+        output_attentions=False,
+        output_hidden_states=False,
+        return_dict=False,
+    ):
+        
+        hidden_states = self.memory_module(hidden_states, memory, memory_len, input_len, self.embedding_hidden_mapping_in)
+        #hidden_states = self.embedding_hidden_mapping_in(hidden_states)
+        #memory = self.embedding_hidden_mapping_in(memory)
+
+        #hidden_states = self.LayerNorm(hidden_states)
+        #memory = self.LayerNorm(memory)
+
+        #hidden_states = self.memory_module(hidden_states,memory, memory_len, input_len)
+
+        all_hidden_states = (hidden_states,) if output_hidden_states else None
+        all_attentions = () if output_attentions else None
+
+        for i in range(self.config.num_hidden_layers):
+            # Number of layers in a hidden group
+            layers_per_group = int(self.config.num_hidden_layers / self.config.num_hidden_groups)
+
+            # Index of the hidden group
+            group_idx = int(i / (self.config.num_hidden_layers / self.config.num_hidden_groups))
+
+            layer_group_output = self.albert_layer_groups[group_idx](
+                hidden_states,
+                relative_embeddings,
+                attention_mask,
+                self.embedding_hidden_mapping_in,
                 head_mask[group_idx * layers_per_group : (group_idx + 1) * layers_per_group],
                 output_attentions,
                 output_hidden_states,
@@ -1063,8 +1229,12 @@ class AlbertModelRelative(AlbertPreTrainedModel):
             attention_mask = torch.ones(input_shape, device=device)
         if token_type_ids is None:
             token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+        if attention_mask.dim() == 2:
+            extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        if attention_mask.dim() == 3:
+            extended_attention_mask = attention_mask.unsqueeze(1)
 
-        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        # extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
         extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
@@ -1098,9 +1268,203 @@ class AlbertModelRelative(AlbertPreTrainedModel):
         )
 
 
+class AlbertInjectMemory(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.memory_query = nn.Linear(config.embedding_size, int(config.embedding_size / config.bottleneck_size))
+        #self.memory_value = nn.Linear(config.embedding_size, config.hidden_size)
+        self.memory_key = nn.Linear(config.embedding_size, int(config.embedding_size / config.bottleneck_size))
+        # self.output = nn.Linear(config.hidden_size, config.hidden_size)
+        self.output_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.m_ = nn.Softmax(dim=0)
+        self.m2 = nn.Softmax(dim=1)
+    
+    def forward(self,hidden_states, memory, memory_len, input_len, embed_map):
+
+        hidden_states_tmp1 = self.memory_operator(hidden_states, memory, memory_len, key=self.memory_key, query=self.memory_query, value=embed_map)
+        hidden_states_dropout = self.output_dropout(hidden_states_tmp1)
+        hidden_states_tmp2=self.LayerNorm(embed_map(hidden_states) + hidden_states_dropout)
+        return hidden_states_tmp2
+    def memory_operator(self, hidden_states, memory, history_len, query=None, key=None, value=None):
+        memory_matrix = []
+        for i in range(len(hidden_states)):
+            if value is not None and key is not None:
+                lambda_layer=torch.matmul(self.m_(key(memory[i][:history_len[i]])).transpose(1,0),value(memory[i][:history_len[i]]))
+            elif key is not None:
+                lambda_layer=torch.matmul(self.m_(key(memory[i][:history_len[i]])).transpose(1,0),memory[i][:history_len[i]])
+            elif value is not None:
+                lambda_layer=torch.matmul(self.m_(memory[i][:history_len[i]]).transpose(1,0),value(memory[i][:history_len[i]]))
+            else:
+                lambda_layer=torch.matmul(self.m_(memory[i][:history_len[i]]).transpose(1,0),memory[i][:history_len[i]])
+
+            memory_matrix.append(lambda_layer)
+        lambda_matrix=torch.stack(memory_matrix)
+        if query is not None:
+            output = torch.bmm(hidden_states * self.m2(query(hidden_states)), lambda_matrix)
+        else:
+            output = torch.bmm(hidden_states * self.m2(hidden_states), lambda_matrix)
+        return output
 
 
 
+
+
+
+@add_start_docstrings(
+    "The bare ALBERT Model transformer outputting raw hidden-states without any specific head on top.",
+    ALBERT_START_DOCSTRING,
+)
+class AlbertModelMemory(AlbertPreTrainedModel):
+
+    config_class = AlbertConfig
+    load_tf_weights = load_tf_weights_in_albert
+    base_model_prefix = "albert"
+
+    def __init__(self, config):
+        super().__init__(config)
+
+        self.config = config
+        self.embeddings = AlbertEmbeddingsMemory(config)
+        self.encoder = AlbertTransformerMemory(config)
+        self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
+        self.pooler_activation = nn.Tanh()
+
+        self.init_weights()
+
+    def get_input_embeddings(self):
+        return self.embeddings.word_embeddings
+
+    def set_input_embeddings(self, value):
+        self.embeddings.word_embeddings = value
+
+    def _resize_token_embeddings(self, new_num_tokens):
+        old_embeddings = self.embeddings.word_embeddings
+        new_embeddings = self._get_resized_embeddings(old_embeddings, new_num_tokens)
+        self.embeddings.word_embeddings = new_embeddings
+        return self.embeddings.word_embeddings
+
+    def _prune_heads(self, heads_to_prune):
+        """Prunes heads of the model.
+        heads_to_prune: dict of {layer_num: list of heads to prune in this layer}
+        ALBERT has a different architecture in that its layers are shared across groups, which then has inner groups.
+        If an ALBERT model has 12 hidden layers and 2 hidden groups, with two inner groups, there
+        is a total of 4 different layers.
+
+        These layers are flattened: the indices [0,1] correspond to the two inner groups of the first hidden layer,
+        while [2,3] correspond to the two inner groups of the second hidden layer.
+
+        Any layer with in index other than [0,1,2,3] will result in an error.
+        See base class PreTrainedModel for more information about head pruning
+        """
+        for layer, heads in heads_to_prune.items():
+            group_idx = int(layer / self.config.inner_group_num)
+            inner_group_idx = int(layer - group_idx * self.config.inner_group_num)
+            self.encoder.albert_layer_groups[group_idx].albert_layers[inner_group_idx].attention.prune_heads(heads)
+
+    @add_start_docstrings_to_callable(ALBERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_code_sample_docstrings(
+        tokenizer_class=_TOKENIZER_FOR_DOC,
+        checkpoint="albert-base-v2",
+        output_type=BaseModelOutputWithPooling,
+        config_class=_CONFIG_FOR_DOC,
+    )
+    def forward(
+        self,
+        memory_input_ids0=None,
+        memory_input_ids1=None,
+        input_len=None,
+        memory_len=None,
+        memory_attention_mask=None,
+        memory=None,
+        input_ids=None,
+        memory_segment=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if input_ids is not None and inputs_embeds is not None:
+            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
+        elif input_ids is not None:
+            input_shape = input_ids.size()
+        elif inputs_embeds is not None:
+            input_shape = inputs_embeds.size()[:-1]
+        else:
+            raise ValueError("You have to specify either input_ids or inputs_embeds")
+
+        device = input_ids.device if input_ids is not None else inputs_embeds.device
+
+        if attention_mask is None:
+            attention_mask = torch.ones(input_shape, device=device)
+        if token_type_ids is None:
+            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+        if attention_mask.dim() == 2:
+            extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        if attention_mask.dim() == 3:
+            extended_attention_mask = attention_mask.unsqueeze(1)
+        
+        
+        if memory_attention_mask.dim() == 2:
+            extended_memory_attention_mask = memory_attention_mask.unsqueeze(1).unsqueeze(2)
+        if memory_attention_mask.dim() == 3:
+            extended_memory_attention_mask = memory_attention_mask.unsqueeze(1)
+ 
+
+        extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+
+        extended_memory_attention_mask = extended_memory_attention_mask.to(dtype=self.dtype)
+        extended_memory_attention_mask =  (1.0 - extended_memory_attention_mask) * -10000.0
+
+
+        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
+
+        embedding_output = self.embeddings(
+            input_ids, position_ids=position_ids, token_type_ids=token_type_ids,\
+            inputs_embeds=inputs_embeds,memory_ids=memory_input_ids0,memory=False)
+
+        memory = self.embeddings(input_ids=memory,token_type_ids=memory_segment\
+        ,memory_ids=memory_input_ids1,memory=False)
+
+        encoder_outputs = self.encoder(
+            embedding_output,
+            self.embeddings.position_embeddings,
+            memory,
+            memory_len = memory_len,
+            attention_mask = extended_attention_mask,
+            memory_attention_mask=extended_memory_attention_mask,
+            input_len=input_len,
+            head_mask=head_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        sequence_output = encoder_outputs[0]
+
+        pooled_output = self.pooler_activation(self.pooler(sequence_output[:, 0]))
+
+        if not return_dict:
+            return (sequence_output, pooled_output) + encoder_outputs[1:]
+
+        return BaseModelOutputWithPooling(
+            last_hidden_state=sequence_output,
+            pooler_output=pooled_output,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions,
+        )
 
 
 @add_start_docstrings(
