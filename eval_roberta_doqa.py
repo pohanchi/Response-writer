@@ -7,8 +7,8 @@ import wandb
 import IPython
 import pdb
 import transformers
-from module import BERTQA_initial, BERTQA_memory, BERTQA
-from transformers import BertTokenizer
+from module import RobertaQA_memory, RobertaQA
+from transformers import RobertaTokenizer
 from evaluate_utils import evaluate 
 from extract_feature import *
 from utils import *
@@ -19,7 +19,7 @@ def main():
     parser.add_argument("--config")
     args = parser.parse_args()
     eval_config = yaml.safe_load(open(args.config,"r"))
-    
+
     if "bottleneck_size" not in list(eval_config.keys()):
         eval_config['bottleneck_size'] = 32
 
@@ -30,14 +30,15 @@ def main():
     checkpoint_step_str = str(max(numbers))
     eval_config['checkpoint_step'] = checkpoint_step_str
     checkpoint_step = "checkpoint-{}".format(eval_config['checkpoint_step'])
+
     dir_path = os.path.join(saved_directory, checkpoint_step)
     config = torch.load(os.path.join(dir_path,"training_args.bin"))
-
+    
     set_seed(config['seed'])
     model = eval(config['model'])(config)
-    model.load_state_dict(torch.load(os.path.join(dir_path, "model.pt"), map_location="cpu"),strict=False)
+    model.load_state_dict(torch.load(os.path.join(dir_path, "model.pt"), map_location="cpu"))
 
-    tokenizer = BertTokenizer.from_pretrained(dir_path)
+    tokenizer = RobertaTokenizer.from_pretrained(dir_path)
 
     wandb.init(project="doqa_twcc_eval_official", name=eval_config['exp_name'])
     wandb.config.update(config)
