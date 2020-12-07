@@ -253,6 +253,99 @@ class BertEmbeddingsRelative(nn.Module):
         embeddings = self.dropout(embeddings)
         return embeddings
 
+class BertEmbeddingsMemory(nn.Module):
+    """Construct the embeddings from word, position and token_type embeddings."""
+
+    def __init__(self, config):
+        super().__init__()
+        self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
+        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
+        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
+        self.memory_embeddings = nn.Embedding(2, config.hidden_size)
+
+        # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
+        # any TensorFlow checkpoint file
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        # position_ids (1, len position emb) is contiguous in memory and exported when serialized
+        self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
+
+    def forward(self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, memory_ids=None, memory=False):
+        
+        if memory == False:
+        
+            if input_ids is not None:
+                input_shape = input_ids.size()
+            else:
+                input_shape = inputs_embeds.size()[:-1]
+
+            seq_length = input_shape[1]
+
+            if position_ids is None:
+                if seq_length <= 512:
+                    position_ids = self.position_ids[:, :seq_length]
+                else:
+                    position_ids = torch.arange(seq_length).expand((1, -1)).cuda()
+                    position_ids = position_ids % 512
+
+            if token_type_ids is None:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+
+            if inputs_embeds is None:
+                inputs_embeds = self.word_embeddings(input_ids)
+            position_embeddings = self.position_embeddings(position_ids)
+            token_type_embeddings = self.token_type_embeddings(token_type_ids)
+
+            memory_embeddings =self.memory_embeddings(memory_ids)
+
+            embeddings = inputs_embeds + token_type_embeddings + position_embeddings + memory_embeddings
+            embeddings = self.LayerNorm(embeddings)
+            embeddings = self.dropout(embeddings)
+            return embeddings
+        
+        else:
+
+            if input_ids is not None:
+                input_shape = input_ids.size()
+            else:
+                input_shape = inputs_embeds.size()[:-1]
+
+            seq_length = input_shape[1]
+
+            if position_ids is None:
+                if seq_length <= 512:
+                    position_ids = self.position_ids[:, :seq_length]
+                else:
+                    position_ids = torch.arange(seq_length).expand((1, -1)).cuda()
+                    position_ids = position_ids % 512
+
+            if token_type_ids is None:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+
+            if inputs_embeds is None:
+                inputs_embeds = self.word_embeddings(input_ids)
+            position_embeddings = self.position_embeddings(position_ids)
+
+            diff = (position_embeddings[:,1] - position_embeddings[:,0]) / seq_length
+            init = position_embeddings[:,0].unsqueeze(1).repeat(1,seq_length,1)
+            
+            for j in range(init.shape[1]):
+                init[:,j] = init[:,j] + diff[:]*j  
+            
+            token_type_ids_0 = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+            token_type_ids_1 = torch.ones(input_shape, dtype=torch.long, device=self.position_ids.device)
+
+            token_type_embeddings_0 = self.token_type_embeddings(token_type_ids_0)
+            token_type_embeddings_1 = self.token_type_embeddings(token_type_ids_1)
+
+            token_type_embeddings = (token_type_embeddings_0 + token_type_embeddings_1) / 2
+
+
+            embeddings = inputs_embeds + token_type_embeddings + init
+            embeddings = self.LayerNorm(embeddings)
+            embeddings = self.dropout(embeddings)
+            return embeddings
 
 class BertEmbeddings_initial_from_pretrained_space(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings."""
@@ -801,6 +894,68 @@ class BertSelfOutput(nn.Module):
         return hidden_states
 
 
+class BertOutputMem(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
+        self.InstanceNorm = nn.InstanceNorm1d(config.hidden_size, affine=True,eps=config.layer_norm_eps)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+    def forward(self, hidden_states, input_tensor):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.InstanceNorm((hidden_states + input_tensor).transpose(1,2)).transpose(1,2)
+        return hidden_states
+
+
+class MemoryLayer(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.chunk_size_feed_forward = config.chunk_size_feed_forward
+        self.seq_len_dim = 1
+        self.memory = BertInjectMemory(config)
+        self.intermediate = BertIntermediate(config)
+        self.output = BertOutputMem(config)
+
+    def forward(
+        self,
+        hidden_states,
+        memory,
+        memory_len,
+        input_len,
+    ):
+        attention_output, mem =self.memory(hidden_states, memory, memory_len, input_len)
+        
+        layer_output = apply_chunking_to_forward(
+            self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
+        )
+        # outputs = (layer_output,) + outputs
+        return layer_output, None
+
+    def feed_forward_chunk(self, attention_output):
+        intermediate_output = self.intermediate(attention_output)
+        layer_output = self.output(intermediate_output, attention_output)
+        return layer_output
+
+class BertMemoryOutput(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        # self.InstanceNorm = nn.InstanceNorm1d(config.hidden_size, affine=True, eps=config.layer_norm_eps)
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        # self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        # self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        # self.activation = ACT2FN[config.hidden_act]
+
+    def forward(self, hidden_states, input_tensor):
+        # hidden_states = self.dense(self.activation(hidden_states))
+        # hidden_states_1 = self.dense(hidden_states)
+        # hidden_states_2 = self.dropout(hidden_states)
+        # hidden_states_2 = hidden_states
+        # hidden_states = self.InstanceNorm((hidden_states_2 + input_tensor).transpose(1,2)).transpose(1,2)
+        hidden_states = self.LayerNorm(hidden_states+ input_tensor)
+        # hidden_states = hidden_states + input_tensor
+        return hidden_states, input_tensor
+
 class BertAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -926,6 +1081,7 @@ class BertAttentionMemory(nn.Module):
     def forward(
         self,
         hidden_states,
+        mem,
         relative_embedding,
         attention_mask=None,
         head_mask=None,
@@ -1130,6 +1286,7 @@ class BertLayerMemory(nn.Module):
     def forward(
         self,
         hidden_states,
+        mem,
         relative_embeddings,
         attention_mask=None,
         head_mask=None,
@@ -1140,6 +1297,7 @@ class BertLayerMemory(nn.Module):
 
         self_attention_outputs = self.attention(
             hidden_states,
+            mem,
             relative_embeddings,
             attention_mask,
             head_mask,
@@ -1323,6 +1481,8 @@ class BertEncoderMemory(nn.Module):
         hidden_states,
         relative_embeddings,
         memory,
+        memory_module=None,
+        memory_len=None,
         input_len=None,
         attention_mask=None,
         memory_att_mask=None,
@@ -1352,6 +1512,7 @@ class BertEncoderMemory(nn.Module):
                 layer_outputs = torch.utils.checkpoint.checkpoint(
                     create_custom_forward(layer_module),
                     hidden_states,
+                    memory,
                     relative_embeddings,
                     attention_mask,
                     layer_head_mask,
@@ -1363,6 +1524,7 @@ class BertEncoderMemory(nn.Module):
 
                 layer_outputs = layer_module(
                     hidden_states,
+                    memory,
                     relative_embeddings,
                     attention_mask,
                     layer_head_mask,
@@ -1373,8 +1535,10 @@ class BertEncoderMemory(nn.Module):
 
             hidden_states = layer_outputs[0]
 
+            # hidden_states = memory_module(hidden_states, memory, memory_len, input_len)
+
             if output_attentions:
-                all_attentions = all_attentions + (layer_outputs[2],)
+                all_attentions = all_attentions + (layer_outputs[1],)
 
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -1884,23 +2048,48 @@ class BertModelRelative(BertPreTrainedModel):
             attentions=encoder_outputs.attentions,
         )
 
-
 class BertInjectMemory(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.memory_query = nn.Linear(config.hidden_size, config.hidden_size)
+        self.memory_query = nn.Linear(config.hidden_size, int(config.hidden_size * config.bottleneck_size))
         self.memory_value = nn.Linear(config.hidden_size, config.hidden_size)
-        self.memory_output = BertSelfOutput(config)
-        self.m = nn.Softmax(dim=1)
+        self.memory_key = nn.Linear(config.hidden_size, int(config.hidden_size * config.bottleneck_size))
+        # self.recurrent = nn.GRU(config.hidden_size, int(config.hidden_size/2), num_layers=3, batch_first=True,bidirectional=True)
+        # self.recurrent_o = nn.GRU(config.hidden_size, int(config.hidden_size/2), num_layers=2, batch_first=True,bidirectional=True)
+        # self.sigmoid = nn.Sigmoid()
+        self.memory_output = BertMemoryOutput(config)
+        # self.InstanceNorm = nn.InstanceNorm1d(config.hidden_size, affine=True, eps=config.layer_norm_eps)
         self.m_ = nn.Softmax(dim=0)
+        self.m2 = nn.Softmax(dim=1)
+
     
-    def forward(self,hidden_states, memory, memory_len):
-        hidden_states_tmp1 = self.memory_operator(hidden_states, memory, memory_len, query=self.memory_query, value=self.memory_value)
-        hidden_states_tmp2 = self.memory_output(hidden_states_tmp1, hidden_states)
+    def forward(self,hidden_states, memory, memory_len, input_len):
+        # hidden_states = self.recurrent(hidden_states)[0]
+        # memory, hn = self.recurrent_o(memory)
+        hidden_states_tmp1, mem_matrix, = self.memory_operator(hidden_states, memory, memory_len, input_len, \
+        key=self.memory_key, value=self.memory_value, query=self.memory_query)
+        # hidden_states_tmp1, mem_matrix, prob = self.memory_operator(hidden_states, memory, memory_len, input_len, \
+        # key=self.memory_key, query=self.memory_query)
+
+        # origin_prob = 1 - prob
+
+        # intergate_vector = origin_prob* hidden_states + hidden_states_tmp1
+
+        # transpose_hidden_states_tmp1 = hidden_states_tmp1.reshape(-1,hidden_states_tmp1.shape[-1])
+        # transpose_hidden_states = hidden_states.reshape(-1,hidden_states_tmp1.shape[-1])
+
+        # history_mem = torch.stack([transpose_hidden_states_tmp1, transpose_hidden_states]).transpose(0,1)
+
+        # hidden_states_tmp1,hn=self.recurrent(history_mem)
+
+        # hidden_states_tmp1=hidden_states_tmp1[:,0,:].reshape(hidden_states.shape[0], hidden_states.shape[1],hidden_states.shape[2])
+
+        hidden_states_tmp1, hidden_states = self.memory_output(hidden_states_tmp1, hidden_states)
         
-        return hidden_states_tmp2
-    def memory_operator(self, hidden_states, memory, history_len, query=None, key=None, value=None):
+        return hidden_states_tmp1, mem_matrix
+
+    def memory_operator(self, hidden_states, memory, history_len, input_len, query=None, key=None, value=None):
         memory_matrix = []
         for i in range(len(hidden_states)):
             if value is not None and key is not None:
@@ -1914,11 +2103,20 @@ class BertInjectMemory(nn.Module):
 
             memory_matrix.append(lambda_layer)
         lambda_matrix=torch.stack(memory_matrix)
+
         if query is not None:
-            output = torch.bmm(query(hidden_states), lambda_matrix)
+            # lambda_matrix = lambda_matrix.reshape(2, lambda_matrix.shape[0], -1)
+            # IPython.embed()
+            # pdb.set_trace()
+            # output, hn=self.recurrent(self.m2(query(hidden_states)),lambda_matrix)
+            # prob = self.sigmoid(query(hidden_states))
+            output = torch.bmm(hidden_states * self.m2(query(hidden_states)), lambda_matrix)
+            return output, lambda_matrix
         else:
-            output = torch.bmm(hidden_states, lambda_matrix)
-        return output
+            # lambda_matrix = lambda_matrix.reshape(2, lambda_matrix.shape[0], -1)
+            # output, hn=self.recurrent(hidden_states,lambda_matrix)
+            output = torch.bmm(hidden_states * self.m2(hidden_states), lambda_matrix)
+            return output, lambda_matrix
 
 @add_start_docstrings(
     "The bare Bert Model transformer outputting raw hidden-states without any specific head on top.",
@@ -1944,11 +2142,10 @@ class BertModelMemory(BertPreTrainedModel):
         super().__init__(config)
         self.config = config
 
-        self.embeddings = BertEmbeddingsRelative(config)
+        self.embeddings = BertEmbeddingsMemory(config)
         self.encoder = BertEncoderMemory(config)
         self.pooler = BertPooler(config)
         self.memory_module = BertInjectMemory(config)
-
         self.init_weights()
 
     def get_input_embeddings(self):
@@ -1974,10 +2171,14 @@ class BertModelMemory(BertPreTrainedModel):
     )
     def forward(
         self,
+        memory_input_ids0=None,
+        memory_input_ids1=None,
         input_len=None,
+        memory_len=None,
         memory_attention_mask=None,
         memory=None,
         memory_segment=None,
+        memory_position_id=None,
         input_ids=None,
         attention_mask=None,
         token_type_ids=None,
@@ -2027,6 +2228,7 @@ class BertModelMemory(BertPreTrainedModel):
         # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
         # ourselves in which case we just need to make it broadcastable to all heads.
         extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape, device)
+        extended_memory_attention_mask: torch.Tensor = self.get_extended_attention_mask(memory_attention_mask, memory.size(), device)
         # extended_memory_attention_mask: torch.Tensor = self.get_extended_attention_mask(memory_attention_mask, memory.size(), device)
         # If a 2D or 3D attention mask is provided for the cross-attention
         # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
@@ -2039,21 +2241,41 @@ class BertModelMemory(BertPreTrainedModel):
         # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
 
-        embedding_output = self.embeddings(
+        embedding_output_tmp = self.embeddings(
             input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
-        )
+        ,memory_ids=memory_input_ids0,memory=False)
 
-        memory = self.embeddings(input_ids=memory, token_type_ids=memory_segment)
 
-        embedding_output = self.memory_module(embedding_output, memory, memory_attention_mask)
+        memory = self.embeddings(input_ids=memory, token_type_ids=memory_segment,memory_ids=memory_input_ids1,memory=False)
+
+        # memory_outputs = self.encoder(
+        #     memory,
+        #     self.embeddings.position_embeddings,
+        #     embedding_output_tmp,
+        #     memory_module=self.memory_module,
+        #     memory_len=input_len,
+        #     input_len=memory_len,
+        #     attention_mask=extended_memory_attention_mask,
+        #     head_mask=head_mask,
+        #     encoder_hidden_states=encoder_hidden_states,
+        #     encoder_attention_mask=encoder_extended_attention_mask,
+        #     output_attentions=output_attentions,
+        #     output_hidden_states=output_hidden_states,
+        #     return_dict=return_dict,
+        # )
+
+        # mem_sequence_output = memory_outputs[0]
+        
+        embedding_output, mem = self.memory_module(embedding_output_tmp, memory, memory_len, input_len)
 
         encoder_outputs = self.encoder(
             embedding_output,
             self.embeddings.position_embeddings,
-            memory,
+            mem,
+            memory_module=self.memory_module,
+            memory_len=memory_len,
             input_len=input_len,
             attention_mask=extended_attention_mask,
-            memory_att_mask=memory_attention_mask,
             head_mask=head_mask,
             encoder_hidden_states=encoder_hidden_states,
             encoder_attention_mask=encoder_extended_attention_mask,
@@ -2061,12 +2283,13 @@ class BertModelMemory(BertPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        sequence_output = encoder_outputs[0]
-        # sequence_output = self.memory_module1(sequence_output, memory, memory_attention_mask)
-        pooled_output = self.pooler(sequence_output)
 
+        sequence_output = encoder_outputs[0]
+        # sequence_output =self.memory_module2(sequence_output, memory_last, memory_len, input_len)
+        pooled_output = self.pooler(sequence_output)
+    
         if not return_dict:
-            return (sequence_output, pooled_output) + encoder_outputs[1:]
+            return (sequence_output, pooled_output,) + encoder_outputs[2:]
 
         return BaseModelOutputWithPooling(
             last_hidden_state=sequence_output,
@@ -2074,7 +2297,6 @@ class BertModelMemory(BertPreTrainedModel):
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
         )
-
 
 
 
