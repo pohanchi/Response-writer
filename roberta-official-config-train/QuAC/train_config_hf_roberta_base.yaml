@@ -1,0 +1,38 @@
+bottleneck_size: 1
+exp_name: DoQAsep_hf_roberta_base_bottleneck_quac
+epoches: 15
+weight_decay: 0.0
+learning_rate: 0.00005
+warmup_steps: 5000
+adam_epsilon: 1.0e-6
+adam_beta1: 0.9
+adam_beta2: 0.98
+batch_size: 2
+gradient_accumulation_steps: 24
+local_rank: -1
+seed: 42
+num_labels: 2
+dialog_labels: 2
+fp16: true
+max_grad_norm: 1.0
+logging_steps: 500
+save_steps: 500
+output_dir: ../CQAModel/QuAC/Roberta-base-HF_16/sep-dev-in_training
+evaluate_during_training: True
+version_2_with_negative: False
+verbose_logging: True
+max_answer_length: 40
+n_best_size: 20
+null_score_diff_threshold: 0.0
+do_lower_case: True
+train_feature_file: preprocessing_files/roberta/QuAC/train
+eval_feature_file: preprocessing_files/roberta/QuAC/dev
+
+model: RobertaQA_memory
+pretrained_name: roberta-base
+pretrained_tokenizer: RobertaTokenizer
+
+model_config:
+  pos_att_type: "c2p|p2c"
+  relative_attention: False
+  max_relative_positions: 10

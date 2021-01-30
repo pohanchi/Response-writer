@@ -249,6 +249,7 @@ if is_torch_available():
         AlbertPreTrainedModel,
         AlbertModelRelative,
         load_tf_weights_in_albert,
+        AlbertModelMemory,
     )
     from .modeling_auto import (
         MODEL_FOR_CAUSAL_LM_MAPPING,
@@ -294,7 +295,11 @@ if is_torch_available():
         BertModel,
         BertModelRelative,
         BertPreTrainedModel,
+        BertModelMemory,
         load_tf_weights_in_bert,
+        BertModelinitial_from_mu_sigma,
+        BertModelMemory2,
+        BertInjectMemory,
     )
     from .modeling_bert_generation import (
         BertGenerationDecoder,
@@ -446,6 +451,9 @@ if is_torch_available():
         RobertaForSequenceClassification,
         RobertaForTokenClassification,
         RobertaModel,
+        RobertaModelRelative,
+        RobertaModelMemory,
+        RobertaModelMemory2,
     )
     from .modeling_t5 import (
         T5_PRETRAINED_MODEL_ARCHIVE_LIST,

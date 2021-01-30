@@ -1,0 +1,9 @@
+mode: test
+ratio: 1.0
+is_dev: false
+stride: 128
+is_training: false
+json_path: ./quac/val_v0.2.json
+output_name: ./preprocessing_files/albert/QuAC/base-v2_dev
+pretrained_tokenizer: AlbertTokenizer
+pretrained_name: albert-base-v2

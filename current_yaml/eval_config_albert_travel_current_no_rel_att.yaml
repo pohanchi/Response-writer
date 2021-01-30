@@ -1,0 +1,4 @@
+saved_directory: ../../bigdata/CQAModel/currentQ-dev-in_training-albert_no_rel_att
+checkpoint_step: 350
+eval_file: albert/current_doqa/doqa_test_file_travel
+exp_name: eval_travel_result_current-albert_no_rel_att

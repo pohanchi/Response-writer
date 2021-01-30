@@ -16,28 +16,43 @@ from evaluate_utils import *
 def train(model, cache_train_file, cache_validation_file, train_args, tokenizer, wandb):
 
     model = model.to(train_args['device'])
+    # wandb.watch(model)
 
     preprocess = torch.load(cache_train_file)
-
     train_feature, train_dataset, train_examples = preprocess['features'], preprocess['dataset'], preprocess['examples']
 
     train_sampler = RandomSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=train_args['batch_size'])
 
-    no_decay = ["bias", "LayerNorm.weight"]
-
     t_total = train_args['epoches'] * len(train_dataloader) // train_args['gradient_accumulation_steps'] 
+
+    no_decay = ["bias", "LayerNorm.weight"]
 
     optimizer_grouped_parameters = [
         {
-            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if ("memory_module" in n or "dialog" in n or "embeddings" in n)],
             "weight_decay": train_args['weight_decay'],
         },
-        {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
+                {
+            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if ("memory_module" not in n and "dialog" not in n and "embeddings" not in n)],
+            "weight_decay": train_args['weight_decay'],
+        },
     ]
+
+    # IPython.embed()
+    # pdb.set_trace()
     
-    optimizer = AdamW(optimizer_grouped_parameters, lr=train_args['learning_rate'], eps=train_args['adam_epsilon'])
-    scheduler = get_constant_decay_schedule_with_warmup(
+    # optimizer_grouped_parameters = [
+    #     {
+    #         "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+    #         "weight_decay": train_args['weight_decay'],
+    #     },
+    #     {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
+    # ]
+
+    
+    optimizer = AdamW(optimizer_grouped_parameters, betas=(train_args['adam_beta1'],train_args["adam_beta2"]),lr=train_args['learning_rate'], eps=train_args['adam_epsilon'])
+    scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=train_args['warmup_steps'], num_training_steps=t_total
     )
 
@@ -86,11 +101,10 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                 "q_start": batch[7],
                 "dialog_act": batch[8],
                 "start_positions":batch[9],
-                "end_positions": batch[10]
+                "end_positions": batch[10],
             }
 
             outputs = model(**inputs)
-            
             #model outputs are always tuple in transformers (see doc)
             loss = outputs[0]
 
@@ -110,6 +124,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                 if train_args['fp16']:
                     torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), train_args['max_grad_norm'])
                 else:
+                    # pass
                     torch.nn.utils.clip_grad_norm_(model.parameters(), train_args['max_grad_norm'])
 
                 optimizer.step()
@@ -133,12 +148,12 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
 
                     replace_index = None
                     
-                    if np.sum(BEST_F1 < record['eval_f1']) > 0:
-                        if len(np.nonzero(BEST_F1 < record['eval_f1'])[0]) > 1:
-                            replace_index = np.nonzero(BEST_F1 < record['eval_f1'])[0][0]
+                    if np.sum(BEST_F1 < (record['eval_f1'])) > 0:
+                        if len(np.nonzero(BEST_F1 <  (record['eval_f1']))[0]) > 1:
+                            replace_index = np.nonzero(BEST_F1 <  (record['eval_f1']))[0][0]
                         else:
-                            replace_index = np.nonzero(BEST_F1 < record['eval_f1'])[0]
-                            BEST_F1[replace_index] = record['eval_f1']
+                            replace_index = np.nonzero(BEST_F1 <  (record['eval_f1']))[0]
+                            BEST_F1[replace_index] =  (record['eval_f1'])
                             BEST_STEP[replace_index] = global_step
 
 

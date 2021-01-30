@@ -692,7 +692,7 @@ class RCResult:
 
 
 
-def extract_and_save_feature(dataset, mode, tokenizer, is_training, name, ratio, is_dev):
+def extract_and_save_feature(dataset, mode, tokenizer, is_training, name, ratio, is_dev, stride=128):
     
     examples = convert_dataset_to_examples(dataset,mode)
 

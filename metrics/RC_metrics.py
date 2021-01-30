@@ -408,6 +408,7 @@ def compute_predictions_logits(
     all_predictions = collections.OrderedDict()
     all_nbest_json = collections.OrderedDict()
     scores_diff_json = collections.OrderedDict()
+    all_groudth_truths = collections.OrderedDict()
 
 
 
@@ -556,6 +557,7 @@ def compute_predictions_logits(
 
         if not version_2_with_negative:
             all_predictions[example.qas_id] = nbest_json[0]["text"]
+            all_groudth_truths[example.qas_id] = [answer for answer in example.answers['text'] if normalize_answer(answer)]
         else:
             # predict "" iff the null score - the score of best non-null > threshold
             score_diff = score_null - best_non_null_entry.start_logit - (best_non_null_entry.end_logit)
@@ -569,6 +571,10 @@ def compute_predictions_logits(
     if output_prediction_file:
         with open(output_prediction_file, "w") as writer:
             writer.write(json.dumps(all_predictions, indent=4) + "\n")
+
+        with open(output_prediction_file+"_groud_truth.json", "w") as writer:
+            writer.write(json.dumps(all_groudth_truths, indent=4) + "\n")
+        
 
     if output_nbest_file:
         with open(output_nbest_file, "w") as writer:

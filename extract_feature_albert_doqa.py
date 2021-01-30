@@ -1,3 +1,4 @@
+
 import numpy as np
 import IPython, pdb
 import functools
@@ -7,7 +8,6 @@ import json
 import copy
 from datasets import load_dataset, list_datasets, load_metric, Dataset
 from transformers import BertModel, BertConfig, BertTokenizer, AlbertTokenizer
-
 from torch import nn
 from itertools import chain
 import random
@@ -234,7 +234,7 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
     truncated_query = tokenizer.encode(
         example.question_text, add_special_tokens=False, truncation=False)
 
-    indexes = np.where(np.array(truncated_query) == 102)
+    indexes = np.where(np.array(truncated_query) == 3)
     question_attention_mask = np.ones_like(np.array(truncated_query)).tolist()
 
     if len(indexes[0])==1:
@@ -250,21 +250,6 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
         question_seg = np.zeros_like(np.array(truncated_query))
         seg_value = [ 1, -1, -2 ]
 
-        # for i in range(len(indexes)-1):
-        #     if i < 3:
-        #         if i+1 == (len(indexes)-1):
-        #             question_seg[1:indexes[i]+1] = seg_value[i]
-        #         else:
-        #             question_seg[indexes[i+1]+1:indexes[i]+1] = seg_value[i]
-        #     else:
-        #         if i+1 == (len(indexes)-1):
-        #             question_seg[1:indexes[i]+1] = 0
-        #         else:
-        #             question_seg[indexes[i+1]:indexes[i]+1] = 0
-        #     if i == 0:
-        #         question_start = indexes[i+1]+1
-        #         question_len = indexes[0]+1
-        # seg_value = [ 0, 1]
         for i in range(len(indexes)-1):
             if i < 3:
                 if i+1 == (len(indexes)-1):
@@ -565,20 +550,19 @@ def convert_dataset_to_examples(datasets, mode):
             #         question = question + history['question'] + " " +"[SEP]"
             
             
-            for i in range(previous,1,1):
-                history = datasets[mode][index+i]
-                if i !=0:
-                    question = question + history['question'] + " " + history['answers']['text'][0] + " " +"[SEP]" + " "
-                else:
-                    question = question + history['question'] + " " +"[SEP]"
-            
             # for i in range(previous,1,1):
             #     history = datasets[mode][index+i]
             #     if i !=0:
-            #         continue
-            #         #question = question + history['question'] + " " + history['answers']['text'][0] + " " +"[SEP]" + " "
+            #         question = question + history['question'] + " " + history['answers']['text'][0] + " " +"[SEP]" + " "
             #     else:
             #         question = question + history['question'] + " " +"[SEP]"
+            
+            for i in range(previous,1,1):
+                history = datasets[mode][index+i]
+                if i !=0:
+                    continue
+                else:
+                    question = question + history['question'] + " " +"[SEP]"
  
 
 
@@ -716,7 +700,7 @@ if __name__ == "__main__":
     mode = "test"
     is_dev = False
     ratio = 0.9
-    dataset = load_dataset("doqa", "cooking",cache_dir="./doqa")
-    cached_features_file = "sep_doqa/doqa_test_file_cooking"
+    dataset = load_dataset("doqa", "travel",cache_dir="./doqa")
+    cached_features_file = "albert/current_doqa/doqa_test_file_travel"
     tokenizer = AlbertTokenizer.from_pretrained("albert-base-v2")
     extract_and_save_feature(dataset, mode, tokenizer, is_training, cached_features_file, ratio=ratio, is_dev=is_dev)
