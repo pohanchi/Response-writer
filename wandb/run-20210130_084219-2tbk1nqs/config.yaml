@@ -1,0 +1,112 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.8.36
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.8.5
+adam_beta1:
+  desc: null
+  value: 0.9
+adam_beta2:
+  desc: null
+  value: 0.999
+adam_epsilon:
+  desc: null
+  value: 1.0e-12
+add_cross_attention:
+  desc: null
+  value: false
+batch_size:
+  desc: null
+  value: 6
+bottleneck_size:
+  desc: null
+  value: 25
+dialog_labels:
+  desc: null
+  value: 2
+do_lower_case:
+  desc: null
+  value: true
+epoches:
+  desc: null
+  value: 20
+eval_feature_file:
+  desc: null
+  value: ../preprocessing_files/devsplit_in_train/bert/sep_doqa/doqa_dev_file_cooking
+evaluate_during_training:
+  desc: null
+  value: true
+exp_name:
+  desc: null
+  value: DoQAsep_hf_bert_base_uncased_bottleneck_16
+fp16:
+  desc: null
+  value: false
+gradient_accumulation_steps:
+  desc: null
+  value: 8
+learning_rate:
+  desc: null
+  value: 5.0e-05
+local_rank:
+  desc: null
+  value: -1
+logging_steps:
+  desc: null
+  value: 50
+max_answer_length:
+  desc: null
+  value: 40
+max_grad_norm:
+  desc: null
+  value: 1.0
+model:
+  desc: null
+  value: BERTQA_memory
+model_config:
+  desc: null
+  value:
+    max_relative_positions: 10
+    pos_att_type: c2p|p2c
+    relative_attention: false
+n_best_size:
+  desc: null
+  value: 20
+null_score_diff_threshold:
+  desc: null
+  value: 0.0
+num_labels:
+  desc: null
+  value: 2
+output_dir:
+  desc: null
+  value: ../CQAModel/DoQA/Bert-base-HF_16/sep-dev-in_training
+pretrained_name:
+  desc: null
+  value: bert-base-uncased
+save_steps:
+  desc: null
+  value: 50
+seed:
+  desc: null
+  value: 42
+train_feature_file:
+  desc: null
+  value: ../preprocessing_files/devsplit_in_train/bert/sep_doqa/doqa_train_file_cooking
+verbose_logging:
+  desc: null
+  value: true
+version_2_with_negative:
+  desc: null
+  value: false
+warmup_steps:
+  desc: null
+  value: 500
+weight_decay:
+  desc: null
+  value: 0.0

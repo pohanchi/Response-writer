@@ -3,12 +3,15 @@ import torch
 import argparse
 import yaml
 import wandb
+import os
 import transformers
-from module import CQAModel, BERTQA, BERTQA2, ALBERTQA2
-from transformers import BertTokenizer, AlbertTokenizer
+from module import ALBERTQA_memory, ALBERTQA
+from transformers import AlbertTokenizer
 from train_utils import train
-from extract_feature import *
+from extract_feature_albert_doqa import *
 from utils import *
+
+# os.environ['WANDB_MODE'] = 'dryrun'
 
 def main():
     # model: paragraph, question_answering module
@@ -18,11 +21,14 @@ def main():
     config = yaml.safe_load(open(args.config,"r"))
     
     set_seed(config['seed'])
-    model= ALBERTQA2(config)
+    model= eval(config['model'])(config)
 
-    tokenizer = AlbertTokenizer.from_pretrained("albert-base-v2")
+    if "pretrained_name" in list(config.keys()):
+        tokenizer = AlbertTokenizer.from_pretrained(config['pretrained_name'])
+    else:
+        tokenizer = AlbertTokenizer.from_pretrained("albert-base-v2")
 
-    wandb.init(project="doqa", name=config['exp_name'])
+    wandb.init(project="doqa_battleship_official", name=config['exp_name'])
     wandb.config.update(config)
 
     wandb.watch(model)

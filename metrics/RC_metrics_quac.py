@@ -13,7 +13,9 @@ import math
 import re
 import string
 import logging
+import copy
 from transformers.tokenization_bert import BasicTokenizer
+from .quac_metrics import *
 
 logger = logging
 
@@ -79,7 +81,7 @@ def get_raw_scores(examples, preds):
 
         if not gold_answers:
             # For unanswerable questions, only correct answer is empty string
-            gold_answers = [""]
+            gold_answers = ["CANNOTANSWER"]
 
         if qas_id not in preds:
             print("Missing prediction for %s" % qas_id)
@@ -403,14 +405,18 @@ def compute_predictions_logits(
         "PrelimPrediction", ["feature_index", "start_index", "end_index", "start_logit", "end_logit"]
     )
 
-    all_predictions = collections.OrderedDict()
+    all_predictions = collections.defaultdict(dict)
     all_nbest_json = collections.OrderedDict()
     scores_diff_json = collections.OrderedDict()
-
+    official_all_predictions = collections.defaultdict(dict)
 
 
     for (example_index, example) in enumerate(all_examples):
         features = example_index_to_features[example_index]
+        # IPython.embed()
+        # pdb.set_trace()
+        # all_predictions[example.qas_id.split("_q#")[0]][example.qas_id]  =None
+        # official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = None 
 
         prelim_predictions = []
         # keep track of the minimum score of null start+end of position 0
@@ -435,8 +441,6 @@ def compute_predictions_logits(
                     # We could hypothetically create invalid predictions, e.g., predict
                     # that the start of the span is in the question. We throw out all
                     # invalid predictions.
-
-
                     if start_index >= len(feature.tokens):
                         continue
                     if end_index >= len(feature.tokens):
@@ -550,8 +554,13 @@ def compute_predictions_logits(
 
         assert len(nbest_json) >= 1, "No valid predictions"
 
+        # IPython.embed()
+        # pdb.set_trace()
+
         if not version_2_with_negative:
-            all_predictions[example.qas_id] = nbest_json[0]["text"]
+            official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = (nbest_json[0]["text"], "y", "y")
+            all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": nbest_json[0]["text"], "yesno": "y", "followup":"y"}
+            # all_predictions[example.qas_id] = nbest_json[0]["text"]
         else:
             if not best_non_null_entry:
                 score_diff = 10
@@ -560,24 +569,39 @@ def compute_predictions_logits(
                 score_diff = score_null - best_non_null_entry.start_logit - (best_non_null_entry.end_logit)
             scores_diff_json[example.qas_id] = score_diff
             if score_diff > null_score_diff_threshold:
-                all_predictions[example.qas_id] = "CANNOTANSWER"
+                # all_predictions[example.qas_id] = "CANNOTANSWER"
+                official_all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = ("CANNOTANSWER", "y", "y")
+                all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = {"best_span_str": "CANNOTANSWER", "yesno": "y", "followup":"y"}
             else:
-                all_predictions[example.qas_id] = best_non_null_entry.text
+                official_all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = (best_non_null_entry.text, "y", "y")
+                all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = {"best_span_str": best_non_null_entry.text, "yesno": "y", "followup":"y"}
+                # all_predictions[example.qas_id] = best_non_null_entry.text
             all_nbest_json[example.qas_id] = nbest_json
+    
+    final_result = []
+    for paragraph_id in list(all_predictions.keys()):
+        data_format = {"best_span_str":[], "qid":[], "followup":[], "yesno":[]}
+        qids=list(all_predictions[paragraph_id].keys())
+        qids.sort(key=lambda e: int(e.split("_q#")[-1]))
+        for qid in qids:
+            data_format['best_span_str'].append(all_predictions[paragraph_id][qid]["best_span_str"])
+            data_format['qid'].append(qid)
+            data_format['followup'].append(all_predictions[paragraph_id][qid]["followup"])
+            data_format['yesno'].append(all_predictions[paragraph_id][qid]["yesno"])
+        
+        final_result.append(copy.deepcopy(data_format))
+
+
 
     if output_prediction_file:
-        with open(output_prediction_file, "w") as writer:
-            writer.write(json.dumps(all_predictions, indent=4) + "\n")
-
-    if output_nbest_file:
-        with open(output_nbest_file, "w") as writer:
-            writer.write(json.dumps(all_nbest_json, indent=4) + "\n")
-
-    if output_null_log_odds_file and version_2_with_negative:
-        with open(output_null_log_odds_file, "w") as writer:
-            writer.write(json.dumps(scores_diff_json, indent=4) + "\n")
-
-    return all_predictions
+        # Initial file if it not exist
+        f = open(output_prediction_file, "w")
+        f.close()
+        for item in final_result:
+            with open(output_prediction_file, "a") as writer:
+                output=json.dumps(item) # dict and \n not add
+                writer.write(output+'\n')
+    return all_predictions, official_all_predictions
 
 
 def compute_predictions_log_probs(

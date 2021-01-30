@@ -5,8 +5,10 @@ import tqdm
 import wandb
 import json
 import copy
+import argparse
+import yaml
 from datasets import load_dataset, list_datasets, load_metric, Dataset
-from transformers import BertModel, BertConfig, BertTokenizer
+from transformers import BertTokenizer
 from torch import nn
 from itertools import chain
 import random
@@ -540,7 +542,7 @@ def convert_dataset_to_examples(datasets, mode):
             for i in range(previous,1,1):
                 history = datasets[mode][index+i]
                 if i !=0:
-                    question = question + history['question'] + " " + "[SEP]" + " " + history['orig_answer']['text'] + " " +"[SEP]" + " "
+                    question = question + history['question'] + " " + history['orig_answer']['text'] + " " +"[SEP]" + " "
                 else:
                     question = question + history['question'] + " " +"[SEP]"
             
@@ -645,6 +647,8 @@ class RCResult:
         self.start_logits = start_logits
         self.end_logits = end_logits
         self.unique_id = unique_id
+        self.cls_logits = cls_logits
+
 
         if start_top_index:
             self.start_top_index = start_top_index
@@ -663,16 +667,15 @@ def extract_and_save_feature(dataset_dict, mode, tokenizer, is_training, name):
 
 if __name__ == '__main__':
 
-    mode = "test"
-    name = "quac/val_v0.2.json"
-    is_training = False
+    parser = argparse.ArgumentParser(description="Argument Parser for HistoryQA project")
+    parser.add_argument("--config")
+    args = parser.parse_args()
+    config = yaml.safe_load(open(args.config, "r"))
+
     dataset_raw = []
-    stride = 128
-    cached_features_file = "quac_test_file_extra"
-    
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased") 
-    data = json.load(open(name))['data']
-    dataset_dict = {mode:None}
+    tokenizer = eval(config['pretrained_tokenizer']).from_pretrained(config['pretrained_name']) 
+    data = json.load(open(config['json_path']))['data']
+    dataset_dict = {config['mode']:None}
 
     for pa_pairs in data:
         context_pa_pair = pa_pairs['paragraphs'][0]
@@ -681,14 +684,24 @@ if __name__ == '__main__':
             qa_pairs.update({'context': context})
             dataset_raw.append(qa_pairs)
 
-    dataset_dict[mode] = dataset_raw
+    dataset_dict[config['mode']] = dataset_raw
 
-    examples = convert_dataset_to_examples(dataset_dict,mode)
+    examples = convert_dataset_to_examples(dataset_dict,config['mode'])
 
-    features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, doc_stride=stride,  is_training=is_training)
+    if "examples" in list(config.keys()):
+        examples = examples[:100]
+
+    if config['mode'] == "train":
+        train_sample = int(config['ratio'] * len(examples))
+        if not config['is_dev']:
+            examples = examples[:train_sample]
+        else:
+            examples = examples[train_sample:]
+
+    features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, doc_stride=config['stride'],  is_training=config['is_training'])
 
     torch.save(
     {"features": features, "dataset": dataset, "examples": examples},
-    cached_features_file,
+    config['output_name'],
     )
 

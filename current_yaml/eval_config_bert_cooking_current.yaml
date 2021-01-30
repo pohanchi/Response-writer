@@ -1,0 +1,4 @@
+saved_directory: ../../bigdata/CQAModel/v2/currentQ-dev-in_training
+checkpoint_step: 400
+eval_file: bert/current_doqa/doqa_test_file_cooking
+exp_name: eval_cooking_result_current
