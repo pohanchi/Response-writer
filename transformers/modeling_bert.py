@@ -2388,7 +2388,7 @@ class BertInjectMemory(nn.Module):
         self.memory_query= nn.ModuleList([nn.Linear(config.hidden_size, config.hidden_size) for _ in range(1)])
         self.memory_value = nn.Linear(config.hidden_size, value_size)
         self.memory_key = nn.Linear(config.hidden_size, config.hidden_size)
-        self.gate_param = nn.Linear(config.hidden_size,1)
+        # self.gate_param = nn.Linear(config.hidden_size,1)
         # self.memory_filter_size = nn.Linear(config.hidden_size, 21)
         self.memory_project = nn.Linear(config.hidden_size, config.hidden_size)
         self.g = nn.Parameter(torch.randn(config.hidden_size,1))
@@ -2447,8 +2447,8 @@ class BertInjectMemory(nn.Module):
             # local_memory_lambda_matrix_b = torch._weight_norm(local_memory_lambda_matrix,self.h, -2)
             
 
-            gate  = self.m2(self.gate_param(hidden_states))
-            query_vector = query[index](hidden_states*gate)
+            # gate  = self.m2(self.gate_param(hidden_states))
+            query_vector = query[index](hidden_states)
             hidden_states_tmp = self.activation(query_vector)
 
             output1 = torch.bmm(hidden_states_tmp, global_memory_lambda_matrix_a)
