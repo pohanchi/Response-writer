@@ -2448,7 +2448,7 @@ class BertInjectMemory(nn.Module):
             
             query_vector = query[index](hidden_states)
             hidden_states_tmp = self.activation(query_vector)
-            gate  = self.m2(self.gata_params(hidden_states))
+            gate  = self.m2(self.gate_param(hidden_states))
 
             output1 = torch.bmm(hidden_states_tmp*gate, global_memory_lambda_matrix_a)
 
