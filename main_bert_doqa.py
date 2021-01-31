@@ -5,7 +5,9 @@ import yaml
 import wandb
 import transformers
 from module import BERTQA_initial, BERTQA_memory, BERTQA
-from transformers import BertTokenizer
+from module import ALBERTQA_memory, ALBERTQA
+from module import RobertaQA_memory, RobertaQA
+from transformers import BertTokenizer, RobertaTokenizer, AlbertTokenizer
 from train_utils import train
 from extract_feature import *
 from utils import *

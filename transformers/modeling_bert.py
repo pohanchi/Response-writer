@@ -2446,11 +2446,12 @@ class BertInjectMemory(nn.Module):
             # local information
             # local_memory_lambda_matrix_b = torch._weight_norm(local_memory_lambda_matrix,self.h, -2)
             
-            query_vector = query[index](hidden_states)
-            hidden_states_tmp = self.activation(query_vector)
-            gate  = self.m2(self.gate_param(hidden_states))
 
-            output1 = torch.bmm(hidden_states_tmp*gate, global_memory_lambda_matrix_a)
+            gate  = self.m2(self.gate_param(hidden_states))
+            query_vector = query[index](hidden_states*gate)
+            hidden_states_tmp = self.activation(query_vector)
+
+            output1 = torch.bmm(hidden_states_tmp, global_memory_lambda_matrix_a)
 
             # output_conv = []
             # conv_hidden = self.activation(self.conv(hidden_states.transpose(1,2)))

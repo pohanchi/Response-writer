@@ -550,19 +550,19 @@ def convert_dataset_to_examples(datasets, mode):
             #         question = question + history['question'] + " " +"[SEP]"
             
             
-            # for i in range(previous,1,1):
-            #     history = datasets[mode][index+i]
-            #     if i !=0:
-            #         question = question + history['question'] + " " + history['answers']['text'][0] + " " +"[SEP]" + " "
-            #     else:
-            #         question = question + history['question'] + " " +"[SEP]"
-            
             for i in range(previous,1,1):
                 history = datasets[mode][index+i]
                 if i !=0:
-                    continue
+                    question = question + history['question'] + " " + history['answers']['text'][0] + " " +"[SEP]" + " "
                 else:
                     question = question + history['question'] + " " +"[SEP]"
+            
+            # for i in range(previous,1,1):
+            #     history = datasets[mode][index+i]
+            #     if i !=0:
+            #         continue
+            #     else:
+            #         question = question + history['question'] + " " +"[SEP]"
  
 
 
