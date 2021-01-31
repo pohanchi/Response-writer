@@ -60,6 +60,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.nn.utils import weight_norm
 import IPython
 import pdb
+import torch.nn.functional as F
 
 logger = logging.get_logger(__name__)
 
@@ -1043,13 +1044,8 @@ class BertSelfAttentionMemoryweight(nn.Module):
             attention_mask = encoder_attention_mask
         else:
             mixed_key_layer = self.key(hidden_states_tmp)
-            # mixed_key_layer = mixed_key_layer.reshape(mixed_key_layer.shape[0]*mixed_key_layer.shape[1], mem.shape[2], int(mixed_key_layer.shape[2]/mem.shape[2]))
-            # mixed_key_layer = torch.bmm(mem, mixed_key_layer)
-            # mixed_key_layer = mixed_key_layer.reshape(hidden_states.shape[0],hidden_states.shape[1],hidden_states.shape[2])
             mixed_value_layer = self.value(hidden_states_tmp)
-            # mixed_value_layer = mixed_value_layer.reshape(mixed_value_layer.shape[0]*mixed_value_layer.shape[1], mem.shape[2], int(mixed_value_layer.shape[2]/mem.shape[2]))
-            # mixed_value_layer = torch.bmm(mem, mixed_value_layer)
-            # mixed_value_layer = mixed_value_layer.reshape(hidden_states.shape[0],hidden_states.shape[1],hidden_states.shape[2])
+
 
 
         query_layer = self.transpose_for_scores(mixed_query_layer)
@@ -1236,24 +1232,6 @@ class MemoryLayer(nn.Module):
         layer_output = self.output(intermediate_output, attention_output)
         return layer_output
 
-class BertMemoryOutput(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        # self.InstanceNorm = nn.InstanceNorm1d(config.hidden_size, affine=True, eps=config.layer_norm_eps)
-        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        # self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        # self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        # self.activation = ACT2FN[config.hidden_act]
-
-    def forward(self, hidden_states, input_tensor):
-        # hidden_states = self.dense(self.activation(hidden_states))
-        # hidden_states_1 = self.dense(hidden_states)
-        # hidden_states_2 = self.dropout(hidden_states)
-        # hidden_states_2 = hidden_states
-        # hidden_states = self.InstanceNorm((hidden_states_2 + input_tensor).transpose(1,2)).transpose(1,2)
-        hidden_states = self.LayerNorm(hidden_states+input_tensor)
-        # hidden_states = hidden_states + input_tensor
-        return hidden_states, input_tensor
 
 class BertAttention(nn.Module):
     def __init__(self, config):
@@ -2410,30 +2388,40 @@ class BertInjectMemory(nn.Module):
         self.memory_query= nn.ModuleList([nn.Linear(config.hidden_size, config.hidden_size) for _ in range(1)])
         self.memory_value = nn.Linear(config.hidden_size, value_size)
         self.memory_key = nn.Linear(config.hidden_size, config.hidden_size)
+        self.gate_param = nn.Linear(config.hidden_size,1)
+        # self.memory_filter_size = nn.Linear(config.hidden_size, 21)
         self.memory_project = nn.Linear(config.hidden_size, config.hidden_size)
         self.g = nn.Parameter(torch.randn(config.hidden_size,1))
+        # self.h = nn.Parameter(torch.randn(21,1))
         self.activation=ACT2FN['gelu']
+        # self.conv = nn.Conv1d(config.hidden_size,config.hidden_size, 21, stride=1, padding=10, groups=config.hidden_size)
+        
         self.memory_LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.m_ = nn.Softmax(dim=0)
         self.m2 = nn.Softmax(dim=1)
     
-    def forward(self,hidden_states, memory, memory_len, input_len, index):
+    def forward(self,hidden_states, memory, memory_len, input_len, index,transform=None):
 
-        hidden_states_tmp1, lambda_matrix = self.memory_operator(hidden_states, memory, memory_len, input_len, index, query=self.memory_query,key=self.memory_key,value=self.memory_value)
+        hidden_states_tmp1, lambda_matrix = self.memory_operator(hidden_states, memory, memory_len, input_len, index, query=self.memory_query,key=self.memory_key,value=self.memory_value,transform=transform)
         hidden_states_tmp2 = self.memory_LayerNorm(hidden_states_tmp1 + hidden_states)
 
         return hidden_states_tmp2, lambda_matrix
 
 
-    def memory_operator(self, hidden_states, memory, history_len, input_len, index,query=None, key=None, value=None):
+    def memory_operator(self, hidden_states, memory, history_len, input_len, index,query=None, key=None, value=None, transform=None):
         
 
         memory_global_matrix = []
+        # memory_local_filters = []
         for i in range(len(hidden_states)):
             if value is not None and key is not None:
                 memory_1d = memory[i][:history_len[i]]
-                lambda_layer=torch.matmul(self.m_(key(memory_1d).transpose(1,0)),value(memory_1d))
+                if transform==None:
+                    lambda_layer=torch.matmul(self.m_(key(memory_1d).transpose(1,0)),value(memory_1d))
+                else:
+                    lambda_layer=torch.matmul(self.m_(torch.matmul(memory_1d,transform[i]).transpose(1,0)),value(memory_1d))
                 lambda_layer=self.memory_project(self.activation(lambda_layer))
+                # lambda_local_layer=torch.matmul(self.m_(self.memory_filter_size(memory_1d).transpose(1,0)), value(memory_1d))
             elif key is not None:
                 lambda_layer=torch.matmul(key(memory[i][:history_len[i]]).transpose(1,0),memory[i][:history_len[i]])
             
@@ -2444,21 +2432,39 @@ class BertInjectMemory(nn.Module):
                 lambda_layer=torch.matmul(self.m_(memory[i][:history_len[i]]).transpose(1,0),memory[i][:history_len[i]])
 
             memory_global_matrix.append(lambda_layer)
+            # memory_local_filters.append(lambda_local_layer)
         global_memory_lambda_matrix = torch.stack(memory_global_matrix)
+        # local_memory_lambda_matrix = torch.stack(memory_local_filters)
 
         if query is not None:
             batch_size = hidden_states.shape[0]
             seq_len = hidden_states.shape[1] 
             hidden_size  = hidden_states.shape[2]
-
+            # global information
             global_memory_lambda_matrix_a = torch._weight_norm(global_memory_lambda_matrix, self.g,-1)
+            
+            # local information
+            # local_memory_lambda_matrix_b = torch._weight_norm(local_memory_lambda_matrix,self.h, -2)
+            
             query_vector = query[index](hidden_states)
-            hidden_states = self.activation(query_vector)
-            output2 = torch.bmm(hidden_states, global_memory_lambda_matrix_a)
+            hidden_states_tmp = self.activation(query_vector)
+            gate  = self.m2(self.gata_params(hidden_states))
+
+            output1 = torch.bmm(hidden_states_tmp*gate, global_memory_lambda_matrix_a)
+
+            # output_conv = []
+            # conv_hidden = self.activation(self.conv(hidden_states.transpose(1,2)))
+            # conv_hidden = hidden_states_tmp.transpose(1,2)
+            # local_memory_lambda_matrix_conv = local_memory_lambda_matrix_b.transpose(1,2).unsqueeze(2)
+            # IPython.embed()
+            # pdb.set_trace()
+            # for each_index in range(batch_size):
+                # conv_output = F.conv1d(conv_hidden[each_index][None,:],local_memory_lambda_matrix_conv[each_index],groups=conv_hidden.shape[1],padding=10)
+                # output_conv.append(conv_output[0].transpose(0,1))
+            # output2 = torch.stack(output_conv)
+            output = output1
             
-            output = output2
-            
-            return output, global_memory_lambda_matrix
+            return output, global_memory_lambda_matrix_a
         else:
             output = torch.bmm( hidden_states * self.m2(query[index](hidden_states)), global_memory_lambda_matrix)
             return output, global_memory_lambda_matrix
@@ -2481,6 +2487,7 @@ class BertInjectMemoryAttention(nn.Module):
         
 
         memory_global_matrix = []
+        memory_local_matrix = []
         for i in range(len(hidden_states)):
             if value is not None and key is not None:
                 memory_1d = memory[i][:history_len[i]]
@@ -2814,7 +2821,7 @@ class BertModelMemory2(BertPreTrainedModel):
 
         memory_embed_query = self.embeddings(input_ids=memory_query, token_type_ids=memory_segment_query, memory_ids=None,memory=False)
         memory_embedding_output, memory_lambda = self.memory_module(memory_embed, memory_embed_query, memory_len_query, memory_len,0)
-        embedding_output, memory_lambda = self.memory_module(embedding_output_tmp, memory_embedding_output, memory_len, input_len,0)
+        embedding_output, memory_lambda = self.memory_module(embedding_output_tmp, memory_embed, memory_len, input_len,0)
 
         encoder_outputs = self.encoder(
             embedding_output,

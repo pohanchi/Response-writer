@@ -1,3 +1,0 @@
-saved_directory: ../CQAModel/rel_10/try-initial
-eval_file: bert/sep_doqa/doqa_test_file_travel
-exp_name: eval_travel_result_sep_bert_initial

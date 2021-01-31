@@ -26,9 +26,9 @@ max_answer_length: 40
 n_best_size: 20
 null_score_diff_threshold: 0.0
 do_lower_case: True
-train_feature_file: preprocessing_files/bert/CoQA/train_clean
-eval_feature_file: preprocessing_files/bert/CoQA/dev_clean
-eval_json: coqa/coqa-dev-v1.0.json
+train_feature_file: ../preprocessing_files/bert/CoQA/train_clean
+eval_feature_file: ../preprocessing_files/bert/CoQA/dev_clean
+eval_json: ../dataset_local/coqa/coqa-dev-v1.0.json
 
 model: BERTQA_memory_coqa
 pretrained_name: bert-base-uncased
