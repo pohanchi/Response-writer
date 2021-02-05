@@ -1,4 +1,4 @@
-bottleneck_size: 25
+bottleneck_size: 16
 add_cross_attention: False
 exp_name: DoQAsep_hf_bert_base_uncased_bottleneck_16
 epoches: 20
@@ -8,8 +8,8 @@ warmup_steps: 500
 adam_epsilon: 1.0e-12
 adam_beta1: 0.9
 adam_beta2: 0.999
-batch_size: 3
-gradient_accumulation_steps: 16
+batch_size: 2
+gradient_accumulation_steps: 24
 local_rank: -1
 seed: 42
 num_labels: 2

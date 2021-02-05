@@ -1155,7 +1155,7 @@ class AlbertTransformerMemory(nn.Module):
 
         self.config = config
         self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
-        self.memory_module = AlbertInjectMemory(config)
+        self.memory_module = AlbertHistoryGenerator(config)
         self.albert_layer_groups = nn.ModuleList([AlbertLayerGroupMemory(config) for _ in range(config.num_hidden_groups)])
 
     def forward(
@@ -1598,6 +1598,73 @@ class AlbertInjectMemory(nn.Module):
         else:
             output = torch.bmm( hidden_states * self.m2(query[index](hidden_states)), global_memory_lambda_matrix)
             return output, global_memory_lambda_matrix
+
+class AlbertHistoryGenerator(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.memory_query= nn.ModuleList([nn.Linear(config.hidden_size, config.hidden_size) for _ in range(1)])
+        self.memory_value = nn.Linear(config.hidden_size, config.hidden_size)
+        self.memory_key = nn.Linear(config.hidden_size, config.hidden_size)
+        self.memory_project = nn.Linear(config.hidden_size, config.hidden_size)
+        # self.g = nn.Parameter(torch.randn(config.hidden_size,1))
+        # self.activation=ACT2FN['gelu']
+        # self.sigmoid = nn.Sigmoid()
+        self.memory_LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.m_ = nn.Softmax(dim=0)
+        self.m2 = nn.Softmax(dim=1)
+    
+    def forward(self,hidden_states, memory, memory_len, input_len, index):
+
+        hidden_states_tmp1, lambda_matrix = self.memory_operator(hidden_states, memory, memory_len, input_len, index, query=self.memory_query,key=self.memory_key,value=self.memory_value)
+        hidden_states_tmp2 = self.memory_LayerNorm(hidden_states_tmp1 + hidden_states)
+
+        return hidden_states_tmp2, lambda_matrix
+
+
+    def memory_operator(self, hidden_states, memory, history_len, input_len, index,query=None, key=None, value=None):
+        
+
+        memory_global_matrix = []
+        for i in range(len(hidden_states)):
+            if value is not None and key is not None:
+                memory_1d = memory[i][:history_len[i]]
+                lambda_layer=torch.matmul(self.m_(key(memory_1d).transpose(1,0)),value(memory_1d))
+                lambda_layer=self.memory_project(lambda_layer)
+            elif key is not None:
+                lambda_layer=torch.matmul(key(memory[i][:history_len[i]]).transpose(1,0),memory[i][:history_len[i]])
+            
+            elif value is not None:
+                lambda_layer=torch.matmul(self.m_(memory[i][:history_len[i]]).transpose(1,0),value(memory[i][:history_len[i]]))
+            
+            else:
+                lambda_layer=torch.matmul(self.m_(memory[i][:history_len[i]]).transpose(1,0),memory[i][:history_len[i]])
+
+            memory_global_matrix.append(lambda_layer)
+        global_memory_lambda_matrix = torch.stack(memory_global_matrix)
+
+        if query is not None:
+            batch_size = hidden_states.shape[0]
+            seq_len = hidden_states.shape[1] 
+            hidden_size  = hidden_states.shape[2]
+
+            global_memory_lambda_matrix_a = global_memory_lambda_matrix
+            # global_memory_lambda_matrix_a = torch._weight_norm(global_memory_lambda_matrix, self.g,-1)
+            query_vector = query[index](hidden_states)
+            # hidden_states = self.activation(query_vector)
+            output2 = torch.bmm(query_vector, global_memory_lambda_matrix_a)
+            
+            output = output2
+            
+            return output, global_memory_lambda_matrix
+        else:
+            output = torch.bmm( hidden_states * self.m2(query[index](hidden_states)), global_memory_lambda_matrix)
+            return output, global_memory_lambda_matrix
+
+
+
+
+
 
 @add_start_docstrings(
     "The bare ALBERT Model transformer outputting raw hidden-states without any specific head on top.",

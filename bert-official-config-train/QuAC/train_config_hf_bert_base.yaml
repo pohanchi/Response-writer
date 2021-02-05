@@ -1,4 +1,4 @@
-bottleneck_size: 1
+bottleneck_size: 16
 add_cross_attention: false
 exp_name: DoQAsep_hf_bert_base_uncased_bottleneck_quac
 epoches: 10
