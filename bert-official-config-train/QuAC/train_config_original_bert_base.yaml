@@ -1,14 +1,14 @@
 bottleneck_size: 1
 exp_name: DoQAsep_bert_base_uncased_quac
-epoches: 15
+epoches: 10
 weight_decay: 0.0
 learning_rate: 0.00005
 warmup_steps: 5000
 adam_epsilon: 1.0e-12
 adam_beta1: 0.9
 adam_beta2: 0.999
-batch_size: 2
-gradient_accumulation_steps: 24
+batch_size: 6
+gradient_accumulation_steps: 8
 local_rank: -1
 seed: 42
 num_labels: 2
@@ -25,8 +25,8 @@ max_answer_length: 60
 n_best_size: 20
 null_score_diff_threshold: 0.0
 do_lower_case: True
-train_feature_file: preprocessing_files/bert/QuAC/train
-eval_feature_file: preprocessing_files/bert/QuAC/dev
+train_feature_file: ../preprocessing_files/bert/QuAC/train
+eval_feature_file: ../preprocessing_files/bert/QuAC/dev
 
 model: BERTQA
 pretrained_name: bert-base-uncased

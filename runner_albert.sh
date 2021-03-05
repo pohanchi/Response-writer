@@ -1,6 +1,6 @@
 
 #train
-python main_albert_doqa.py --config albert-official-config-train/DoQA/train_config_hf_albert_base-v2.yaml
+# python main_albert_doqa.py --config albert-official-config-train/DoQA/train_config_hf_albert_base-v2.yaml
 
 
 # evaluate

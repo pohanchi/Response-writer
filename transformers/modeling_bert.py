@@ -2478,12 +2478,7 @@ class BertHistoryGenerator(nn.Module):
         self.memory_query= nn.ModuleList([nn.Linear(config.hidden_size, config.hidden_size) for _ in range(1)])
         self.memory_value = nn.Linear(config.hidden_size, value_size)
         self.memory_key = nn.Linear(config.hidden_size, config.hidden_size)
-        self.memory_project = nn.Linear(config.hidden_size, config.hidden_size)
-        # self.g = nn.Parameter(torch.randn(config.hidden_size,1))
-        # self.h = nn.Parameter(torch.randn(21,1))
-        # self.activation=ACT2FN['gelu']
-        # self.conv = nn.Conv1d(config.hidden_size,config.hidden_size, 21, stride=1, padding=10, groups=config.hidden_size)
-        # self.sigmoid = nn.Sigmoid()
+        self.memory_project = nn.Linear(config.hidden_size, 1)
         self.memory_LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.m_ = nn.Softmax(dim=0)
         self.m2 = nn.Softmax(dim=1)
@@ -2500,7 +2495,6 @@ class BertHistoryGenerator(nn.Module):
         
 
         memory_global_matrix = []
-        # memory_local_filters = []
         for i in range(len(hidden_states)):
             if value is not None and key is not None:
                 memory_1d = memory[i][:history_len[i]]
@@ -2509,7 +2503,6 @@ class BertHistoryGenerator(nn.Module):
                 else:
                     lambda_layer=torch.matmul(self.m_(torch.matmul(memory_1d,transform[i]).transpose(1,0)),value(memory_1d))
                 lambda_layer=self.memory_project(lambda_layer)
-                # lambda_local_layer=torch.matmul(self.m_(self.memory_filter_size(memory_1d).transpose(1,0)), value(memory_1d))
             elif key is not None:
                 lambda_layer=torch.matmul(key(memory[i][:history_len[i]]).transpose(1,0),memory[i][:history_len[i]])
             
@@ -2520,40 +2513,18 @@ class BertHistoryGenerator(nn.Module):
                 lambda_layer=torch.matmul(self.m_(memory[i][:history_len[i]]).transpose(1,0),memory[i][:history_len[i]])
 
             memory_global_matrix.append(lambda_layer)
-            # memory_local_filters.append(lambda_local_layer)
-        global_memory_lambda_matrix = torch.stack(memory_global_matrix)
-        # local_memory_lambda_matrix = torch.stack(memory_local_filters)
+        global_memory_lambda_matrix = torch.stack(memory_global_matrix).transpose(-2,-1)
 
         if query is not None:
             batch_size = hidden_states.shape[0]
             seq_len = hidden_states.shape[1] 
             hidden_size  = hidden_states.shape[2]
-            # global information
-            # global_memory_lambda_matrix_a = torch._weight_norm(global_memory_lambda_matrix, self.g,-1)
-            global_memory_lambda_matrix_a = global_memory_lambda_matrix
-            # local information
-            # local_memory_lambda_matrix_b = torch._weight_norm(local_memory_lambda_matrix,self.h, -2)
-            
 
-            # gate  = self.m2(self.gate_param(hidden_states))
             query_vector = query[index](hidden_states)
-            # hidden_states_tmp = self.activation(query_vector)
+            output = query_vector * global_memory_lambda_matrix
 
-            output1 = torch.bmm(query_vector, global_memory_lambda_matrix_a)
-
-            # output_conv = []
-            # conv_hidden = self.activation(self.conv(hidden_states.transpose(1,2)))
-            # conv_hidden = hidden_states_tmp.transpose(1,2)
-            # local_memory_lambda_matrix_conv = local_memory_lambda_matrix_b.transpose(1,2).unsqueeze(2)
-            # IPython.embed()
-            # pdb.set_trace()
-            # for each_index in range(batch_size):
-                # conv_output = F.conv1d(conv_hidden[each_index][None,:],local_memory_lambda_matrix_conv[each_index],groups=conv_hidden.shape[1],padding=10)
-                # output_conv.append(conv_output[0].transpose(0,1))
-            # output2 = torch.stack(output_conv)
-            output = output1
             
-            return output, global_memory_lambda_matrix_a
+            return output, global_memory_lambda_matrix
         else:
             output = torch.bmm( hidden_states * self.m2(query[index](hidden_states)), global_memory_lambda_matrix)
             return output, global_memory_lambda_matrix

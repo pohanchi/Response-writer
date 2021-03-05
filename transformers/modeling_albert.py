@@ -1590,7 +1590,7 @@ class AlbertInjectMemory(nn.Module):
             global_memory_lambda_matrix_a = torch._weight_norm(global_memory_lambda_matrix, self.g,-1)
             query_vector = query[index](hidden_states)
             hidden_states = self.activation(query_vector)
-            output2 = torch.bmm(hidden_states, global_memory_lambda_matrix_a)
+            output = torch.bmm(hidden_states, global_memory_lambda_matrix_a)
             
             output = output2
             
@@ -1606,7 +1606,7 @@ class AlbertHistoryGenerator(nn.Module):
         self.memory_query= nn.ModuleList([nn.Linear(config.hidden_size, config.hidden_size) for _ in range(1)])
         self.memory_value = nn.Linear(config.hidden_size, config.hidden_size)
         self.memory_key = nn.Linear(config.hidden_size, config.hidden_size)
-        self.memory_project = nn.Linear(config.hidden_size, config.hidden_size)
+        self.memory_project = nn.Linear(config.hidden_size, 1)
         # self.g = nn.Parameter(torch.randn(config.hidden_size,1))
         # self.activation=ACT2FN['gelu']
         # self.sigmoid = nn.Sigmoid()
@@ -1642,19 +1642,16 @@ class AlbertHistoryGenerator(nn.Module):
 
             memory_global_matrix.append(lambda_layer)
         global_memory_lambda_matrix = torch.stack(memory_global_matrix)
+        global_memory_lambda_matrix = global_memory_lambda_matrix.transpose(-1,-2)
 
         if query is not None:
             batch_size = hidden_states.shape[0]
             seq_len = hidden_states.shape[1] 
             hidden_size  = hidden_states.shape[2]
-
-            global_memory_lambda_matrix_a = global_memory_lambda_matrix
             # global_memory_lambda_matrix_a = torch._weight_norm(global_memory_lambda_matrix, self.g,-1)
             query_vector = query[index](hidden_states)
             # hidden_states = self.activation(query_vector)
-            output2 = torch.bmm(query_vector, global_memory_lambda_matrix_a)
-            
-            output = output2
+            output = query_vector * global_memory_lambda_matrix
             
             return output, global_memory_lambda_matrix
         else:
