@@ -843,6 +843,8 @@ class BertSelfAttentionMemory(nn.Module):
         # and values come from an encoder; the attention mask needs to be
         # such that the encoder's padding tokens are not attended to.
         if encoder_hidden_states is not None:
+            # import ipdb; ipdb.set_trace()
+
             mixed_key_layer = self.key(encoder_hidden_states)
             mixed_value_layer = self.value(encoder_hidden_states)
 
@@ -1023,16 +1025,7 @@ class BertSelfAttentionMemoryweight(nn.Module):
         output_attentions=False,
     ):
         hidden_states_tmp = hidden_states
-        mixed_query_layer = self.query(hidden_states_tmp)
-        mixed_query_layer = hidden_states_tmp * self.m(mixed_query_layer)
-        # mixed_query_layer = mixed_query_layer.reshape(mixed_query_layer.shape[0]*mixed_query_layer.shape[1], mem.shape[2], int(mixed_query_layer.shape[2]/mem.shape[2]))
-        # mixed_query_layer = torch.bmm(mem, mixed_query_layer)
-        # mixed_query_layer = mixed_query_layer.reshape(hidden_states.shape[0],hidden_states.shape[1],hidden_states.shape[2])
-        # IPython.embed()
-        # pdb.set_trace()
-
-        # mixed_query_memory_layer = self.query(memory_tmp)
-        
+        mixed_query_layer = self.query(hidden_states_tmp)        
 
         # If this is instantiated as a cross-attention module, the keys
         # and values come from an encoder; the attention mask needs to be
@@ -1365,7 +1358,12 @@ class BertAttentionMemory(nn.Module):
         encoder_hidden_states=None,
         encoder_attention_mask=None,
         output_attentions=False,
+        cross_att=False,
     ):
+        if cross_att==False:
+            encoder_hidden_states = None
+            encoder_attention_mask = None
+
         self_outputs = self.self(
             hidden_states,
             relative_embedding,
@@ -1472,7 +1470,8 @@ class BertOutputMemory(nn.Module):
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        hidden_states = self.LayerNorm((hidden_states + input_tensor))
+
         return hidden_states
 
 class BertLayer(nn.Module):
@@ -1620,6 +1619,7 @@ class BertLayerMemory(nn.Module):
         encoder_hidden_states=None,
         encoder_attention_mask=None,
         output_attentions=False,
+        cross_att=False,
     ):
 
         self_attention_outputs = self.attention(
@@ -1628,7 +1628,10 @@ class BertLayerMemory(nn.Module):
             relative_embeddings,
             attention_mask,
             head_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
             output_attentions=output_attentions,
+            cross_att=cross_att,
         )
 
         attention_output = self_attention_outputs[0]
@@ -1792,7 +1795,7 @@ class BertEncoderRelative(nn.Module):
             last_hidden_state=hidden_states, hidden_states=all_hidden_states, attentions=all_attentions
         )
 
-class BertEncoderMemory(nn.Module):
+class BertEncoderHisBERT(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -1814,14 +1817,20 @@ class BertEncoderMemory(nn.Module):
         output_attentions=False,
         output_hidden_states=False,
         return_dict=False,
+        index=12,
+        start=0,
     ):
         all_hidden_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
         for i, layer_module in enumerate(self.layer):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
-
+            
             layer_head_mask = head_mask[i] if head_mask is not None else None
+            if i < start:
+                continue 
+            if i >= index:
+                break
 
             if getattr(self.config, "gradient_checkpointing", False):
 
@@ -1842,8 +1851,8 @@ class BertEncoderMemory(nn.Module):
                     encoder_attention_mask,
                 )
             else:
-                if i !=0:
 
+                if i == 11 or i == 1:
                     layer_outputs = layer_module(
                         hidden_states,
                         memory,
@@ -1853,9 +1862,10 @@ class BertEncoderMemory(nn.Module):
                         encoder_hidden_states,
                         encoder_attention_mask,
                         output_attentions,
+                        cross_att=True,
                     )
-
                 else:
+
                     layer_outputs = layer_module(
                         hidden_states,
                         memory,
@@ -1880,6 +1890,94 @@ class BertEncoderMemory(nn.Module):
         return BaseModelOutput(
             last_hidden_state=hidden_states, hidden_states=all_hidden_states, attentions=all_attentions
         )
+
+class BertEncoderMemory(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.layer = nn.ModuleList([BertLayerMemory(config) for _ in range(config.num_hidden_layers)])
+
+    def forward(
+        self,
+        hidden_states,
+        relative_embeddings,
+        memory,
+        memory_module=None,
+        memory_len=None,
+        input_len=None,
+        attention_mask=None,
+        memory_att_mask=None,
+        head_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        output_attentions=False,
+        output_hidden_states=False,
+        return_dict=False,
+        index=12,
+        start=0,
+    ):
+        all_hidden_states = () if output_hidden_states else None
+        all_attentions = () if output_attentions else None
+        for i, layer_module in enumerate(self.layer):
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
+            
+            layer_head_mask = head_mask[i] if head_mask is not None else None
+            if i < start:
+                continue 
+            if i >= index:
+                break
+
+            if getattr(self.config, "gradient_checkpointing", False):
+
+                def create_custom_forward(module):
+                    def custom_forward(*inputs):
+                        return module(*inputs, output_attentions)
+
+                    return custom_forward
+
+                layer_outputs = torch.utils.checkpoint.checkpoint(
+                    create_custom_forward(layer_module),
+                    hidden_states,
+                    memory,
+                    relative_embeddings,
+                    memory_att_mask,
+                    layer_head_mask,
+                    encoder_hidden_states,
+                    encoder_attention_mask,
+                )
+            else:
+
+                
+                layer_outputs = layer_module(
+                    hidden_states,
+                    memory,
+                    relative_embeddings,
+                    attention_mask,
+                    layer_head_mask,
+                    encoder_hidden_states,
+                    encoder_attention_mask,
+                    output_attentions,
+                )
+
+            hidden_states = layer_outputs[0]
+
+            if output_attentions:
+                all_attentions = all_attentions + (layer_outputs[1],)
+
+        if output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
+
+        if not return_dict:
+            return tuple(v for v in [hidden_states, memory, all_hidden_states, all_attentions] if v is not None)
+        return BaseModelOutput(
+            last_hidden_state=hidden_states, hidden_states=all_hidden_states, attentions=all_attentions
+        )
+
+
+
+
+
 
 class BertPooler(nn.Module):
     def __init__(self, config):
@@ -2498,7 +2596,7 @@ class BertHistoryGenerator(nn.Module):
         for i in range(len(hidden_states)):
             if value is not None and key is not None:
                 memory_1d = memory[i][:history_len[i]]
-                if transform==None:
+                if transform is None:
                     lambda_layer=torch.matmul(self.m_(key(memory_1d).transpose(1,0)),value(memory_1d))
                 else:
                     lambda_layer=torch.matmul(self.m_(torch.matmul(memory_1d,transform[i]).transpose(1,0)),value(memory_1d))
@@ -2530,64 +2628,43 @@ class BertHistoryGenerator(nn.Module):
             return output, global_memory_lambda_matrix
 
 class BertHistoryGeneratorTokenLevel(nn.Module):
-    def __init__(self, config, value_size):
+    def __init__(self, config):
         super().__init__()
         self.config = config
-        self.memory_query= nn.ModuleList([nn.Linear(config.hidden_size, config.hidden_size) for _ in range(1)])
-        self.memory_value = nn.Linear(config.hidden_size, value_size)
-        self.memory_key = nn.Linear(config.hidden_size, config.hidden_size)
-        self.memory_project = nn.Linear(config.hidden_size, 1)
+        self.memory_query = nn.Linear(config.hidden_size, 1)
+        self.memory_transform = nn.Linear(config.hidden_size, config.hidden_size)
+        self.transform = nn.Linear(config.hidden_size, config.hidden_size)
         self.memory_LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.m_ = nn.Softmax(dim=0)
         self.m2 = nn.Softmax(dim=1)
     
-    def forward(self,hidden_states, memory, memory_len, input_len, index,transform=None):
-
-        hidden_states_tmp1, lambda_matrix = self.memory_operator(hidden_states, memory, memory_len, input_len, index, query=self.memory_query,key=self.memory_key,value=self.memory_value,transform=transform)
+    def forward(self, question, question_attmask, hidden_states, history, history_attmask):
+        
+        args_dict = {"question": question, "question_attmask": question_attmask, 
+                     "hidden_states":hidden_states, "history":history, 
+                     "history_attmask":history_attmask}
+        
+        hidden_states_tmp1 = self.memory_operator(**args_dict)
         hidden_states_tmp2 = self.memory_LayerNorm(hidden_states_tmp1 + hidden_states)
 
-        return hidden_states_tmp2, lambda_matrix
+        return hidden_states_tmp2
 
 
-    def memory_operator(self, hidden_states, memory, history_len, input_len, index,query=None, key=None, value=None, transform=None):
+    def memory_operator(self, question, question_attmask, hidden_states, history, history_attmask):
+        question_logits = self.memory_query(question)
+        question_attmask = question_attmask[:,0].transpose(-1,-2)
+        q_logits = question_logits + question_attmask
+        q_probs = self.m2(q_logits)
+        question_weights = torch.sum(question * q_probs, dim=-2)[:,None].transpose(-1,-2)
+
+        history_logits = torch.bmm(self.memory_transform(history), question_weights)
+        history_attmask = history_attmask[:,0].transpose(-1,-2)
+        h_logits = history_logits + history_attmask
+        h_probs = self.m2(h_logits)
+        history_weights = torch.sum(history * h_probs, dim=-2)[:,None]
+        output =  history_weights * self.transform(hidden_states)
         
-
-        memory_global_matrix = []
-        for i in range(len(hidden_states)):
-            if value is not None and key is not None:
-                memory_1d = memory[i][:history_len[i]]
-                if transform==None:
-                    lambda_layer=torch.matmul(self.m_(key(memory_1d).transpose(1,0)),value(memory_1d))
-                else:
-                    lambda_layer=torch.matmul(self.m_(torch.matmul(memory_1d,transform[i]).transpose(1,0)),value(memory_1d))
-                lambda_layer=self.memory_project(lambda_layer)
-            elif key is not None:
-                lambda_layer=torch.matmul(key(memory[i][:history_len[i]]).transpose(1,0),memory[i][:history_len[i]])
-            
-            elif value is not None:
-                lambda_layer=torch.matmul(self.m_(memory[i][:history_len[i]]).transpose(1,0),value(memory[i][:history_len[i]]))
-            
-            else:
-                lambda_layer=torch.matmul(self.m_(memory[i][:history_len[i]]).transpose(1,0),memory[i][:history_len[i]])
-
-            memory_global_matrix.append(lambda_layer)
-        global_memory_lambda_matrix = torch.stack(memory_global_matrix).transpose(-2,-1)
-
-        if query is not None:
-            batch_size = hidden_states.shape[0]
-            seq_len = hidden_states.shape[1] 
-            hidden_size  = hidden_states.shape[2]
-
-            query_vector = query[index](hidden_states)
-            output = query_vector * global_memory_lambda_matrix
-
-            
-            return output, global_memory_lambda_matrix
-        else:
-            output = torch.bmm( hidden_states * self.m2(query[index](hidden_states)), global_memory_lambda_matrix)
-            return output, global_memory_lambda_matrix
-
-
+        return output
 
 
 
@@ -2667,8 +2744,6 @@ class BertInjectMemoryLG(nn.Module):
                 lambda_all_matrix=torch.matmul(GL_lambda, ValueVector)
                 lambda_all_matrix=self.memory_project(self.activation(lambda_all_matrix))
                 memory_GL_matrix.append(lambda_all_matrix)
-                # IPython.embed()
-                # pdb.set_trace()
                 # local_lambda_layer = torch.matmul((self.m_(self.memory_local_key(memory_1d_all))[None,:] * mask[:,:,None]).transpose(2,1), value(memory_1d_all))
                 # local_lambda_layer = self.memory_project(local_lambda_layer)
 
@@ -2938,7 +3013,7 @@ class BertModelMemory(BertPreTrainedModel):
         )
 
 
-class BertModelMemory2(BertPreTrainedModel):
+class HisBERTModel(BertPreTrainedModel):
     """
 
     The model can behave as an encoder (with only self-attention) as well
@@ -2959,8 +3034,9 @@ class BertModelMemory2(BertPreTrainedModel):
         self.config = config
 
         self.embeddings = BertEmbeddingsMemory2(config)
-        self.encoder = BertEncoderMemory(config)
+        self.encoder = BertEncoderHisBERT(config)
         self.pooler = BertPooler(config)
+        # self.memory_module = BertHistoryGeneratorTokenLevel(config)
         self.memory_module = BertHistoryGenerator(config, config.hidden_size)
         self.init_weights()
 
@@ -2999,6 +3075,7 @@ class BertModelMemory2(BertPreTrainedModel):
         memory_len_query=None,
         memory_segment_query=None,
         input_ids=None,
+        query_att_mask=None,
         attention_mask=None,
         token_type_ids=None,
         position_ids=None,
@@ -3046,6 +3123,7 @@ class BertModelMemory2(BertPreTrainedModel):
 
         # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
         # ourselves in which case we just need to make it broadcastable to all heads.
+        extended_query_att_mask = self.get_extended_attention_mask(query_att_mask, memory_query.size(), device)
         extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape, device)
         extended_memory_attention_mask: torch.Tensor = self.get_extended_attention_mask(memory_attention_mask, memory.size(), device)
         # extended_memory_attention_mask: torch.Tensor = self.get_extended_attention_mask(memory_attention_mask, memory.size(), device)
@@ -3060,55 +3138,183 @@ class BertModelMemory2(BertPreTrainedModel):
         # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
 
+
         embedding_output_tmp = self.embeddings(
             input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
         ,memory_ids=memory_input_ids0,memory=False)
-
-
-
         memory_embed = self.embeddings(input_ids=memory, token_type_ids=memory_segment, memory_ids=memory_input_ids1,memory=False)
-
         memory_embed_query = self.embeddings(input_ids=memory_query, token_type_ids=memory_segment_query, memory_ids=None,memory=False)
-        memory_embedding_output, memory_lambda = self.memory_module(memory_embed, memory_embed_query, memory_len_query, memory_len,0)
-        embedding_output, memory_lambda = self.memory_module(embedding_output_tmp, memory_embed, memory_len, input_len,0)
+        # memory_embedding_output, memory_lambda = self.memory_module(memory_embed, memory_embed_query, memory_len_query, memory_len,0)
+        # embedding_output, memory_lambda = self.memory_module(embedding_output_tmp, memory_embedding_output, memory_len, input_len,0)
 
-        encoder_outputs = self.encoder(
-            embedding_output,
-            self.embeddings.position_embeddings,
-            memory_embedding_output,
-            memory_module=self.memory_module,
-            memory_len=memory_len,
-            input_len=input_len,
-            memory_att_mask=extended_memory_attention_mask,
-            attention_mask=extended_attention_mask,
-            head_mask=head_mask,
-            encoder_hidden_states=memory_embedding_output,
-            encoder_attention_mask=extended_memory_attention_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
+
+        # encoder_outputs_mem = self.encoder(
+        #     memory_embed,
+        #     self.embeddings.position_embeddings,
+        #     embedding_output_tmp,
+        #     memory_module=self.memory_module,
+        #     memory_len=input_len,
+        #     input_len=memory_len,
+        #     memory_att_mask=extended_attention_mask,
+        #     attention_mask=extended_memory_attention_mask,
+        #     head_mask=head_mask,
+        #     encoder_hidden_states=None,
+        #     encoder_attention_mask=None,
+        #     output_attentions=output_attentions,
+        #     output_hidden_states=output_hidden_states,
+        #     return_dict=return_dict,
+        #     index=1,
+        # )
 
         encoder_outputs_mem = self.encoder(
-            memory_embedding_output,
+            memory_embed,
             self.embeddings.position_embeddings,
-            embedding_output,
+            embedding_output_tmp,
             memory_module=self.memory_module,
             memory_len=input_len,
             input_len=memory_len,
             memory_att_mask=extended_attention_mask,
             attention_mask=extended_memory_attention_mask,
             head_mask=head_mask,
-            encoder_hidden_states=memory_embedding_output,
+            encoder_hidden_states=None,
+            encoder_attention_mask=None,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            index=1,
+        )
+
+        # encoder_outputs = self.encoder(
+        #     embedding_output_tmp,
+        #     self.embeddings.position_embeddings,
+        #     memory_embed,
+        #     memory_module=self.memory_module,
+        #     memory_len=memory_len,
+        #     input_len=input_len,
+        #     memory_att_mask=extended_memory_attention_mask,
+        #     attention_mask=extended_attention_mask,
+        #     head_mask=head_mask,
+        #     encoder_hidden_states=memory_embed,
+        #     encoder_attention_mask=extended_memory_attention_mask,
+        #     output_attentions=output_attentions,
+        #     output_hidden_states=output_hidden_states,
+        #     return_dict=return_dict,
+        #     index=1,
+        # )
+
+
+        encoder_outputs = self.encoder(
+            embedding_output_tmp,
+            self.embeddings.position_embeddings,
+            memory_embed,
+            memory_module=self.memory_module,
+            memory_len=memory_len,
+            input_len=input_len,
+            memory_att_mask=extended_memory_attention_mask,
+            attention_mask=extended_attention_mask,
+            head_mask=head_mask,
+            encoder_hidden_states=memory_embed,
+            encoder_attention_mask=extended_memory_attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            index=1,
+        )
+
+
+        sequence_output_mem = encoder_outputs_mem[0]
+        sequence_output = encoder_outputs[0]
+
+        encoder_outputs_mem = self.encoder(
+            sequence_output_mem,
+            self.embeddings.position_embeddings,
+            sequence_output,
+            memory_module=self.memory_module,
+            memory_len=input_len,
+            input_len=memory_len,
+            memory_att_mask=extended_attention_mask,
+            attention_mask=extended_memory_attention_mask,
+            head_mask=head_mask,
+            encoder_hidden_states=sequence_output,
             encoder_attention_mask=extended_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            start=1,
+            index=11,
         )
 
-        sequence_output_tmp = encoder_outputs[0]
-        sequence_output_mem = encoder_outputs_mem[0]
-        sequence_output, _ =self.memory_module(sequence_output_tmp, sequence_output_mem, memory_len, input_len, 0)
+        sequence_output_mem_11 = encoder_outputs_mem[0]
+
+        
+        encoder_outputs = self.encoder(
+            sequence_output,
+            self.embeddings.position_embeddings,
+            sequence_output_mem,
+            memory_module=self.memory_module,
+            memory_len=memory_len,
+            input_len=input_len,
+            memory_att_mask=extended_memory_attention_mask,
+            attention_mask=extended_attention_mask,
+            head_mask=head_mask,
+            encoder_hidden_states=sequence_output_mem,
+            encoder_attention_mask=extended_memory_attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            index=11,
+            start=1,
+        )
+
+        sequence_output = encoder_outputs[0]
+
+        encoder_outputs = self.encoder(
+            sequence_output,
+            self.embeddings.position_embeddings,
+            sequence_output_mem_11,
+            memory_module=self.memory_module,
+            memory_len=memory_len,
+            input_len=input_len,
+            memory_att_mask=extended_memory_attention_mask,
+            attention_mask=extended_attention_mask,
+            head_mask=head_mask,
+            encoder_hidden_states=sequence_output_mem_11,
+            encoder_attention_mask=extended_memory_attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            start=11,
+        )
+
+
+
+        # encoder_outputs_q = self.encoder(
+        #     memory_embed_query,
+        #     self.embeddings.position_embeddings,
+        #     embedding_output,
+        #     memory_module=self.memory_module,
+        #     memory_len=input_len,
+        #     input_len=memory_len_query,
+        #     memory_att_mask=extended_attention_mask,
+        #     attention_mask=extended_query_att_mask,
+        #     head_mask=head_mask,
+        #     encoder_hidden_states=memory_embed_query,
+        #     encoder_attention_mask=extended_attention_mask,
+        #     output_attentions=output_attentions,
+        #     output_hidden_states=output_hidden_states,
+        #     return_dict=return_dict,
+        # )
+
+
+
+        # sequence_output = encoder_outputs[0]
+        # sequence_output_mem = encoder_outputs_mem[0]
+        # sequence_output_q = encoder_outputs_q[0]
+
+        # args ={"question":memory_embed_query,"hidden_states":sequence_output, "history":sequence_output_mem, 
+        #        "question_attmask":extended_query_att_mask, "history_attmask":extended_memory_attention_mask}
+        # sequence_output = self.memory_module(**args)
+        # sequence_output, _ =self.memory_module(sequence_output, sequence_output_mem, memory_len, input_len, 0)
         pooled_output = self.pooler(sequence_output)
 
     
@@ -3121,6 +3327,219 @@ class BertModelMemory2(BertPreTrainedModel):
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
         )
+
+class BertModelMemory2(BertPreTrainedModel):
+    """
+
+    The model can behave as an encoder (with only self-attention) as well
+    as a decoder, in which case a layer of cross-attention is added between
+    the self-attention layers, following the architecture described in `Attention is all you need
+    <https://arxiv.org/abs/1706.03762>`__ by Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones,
+    Aidan N. Gomez, Lukasz Kaiser and Illia Polosukhin.
+
+    To behave as an decoder the model needs to be initialized with the
+    :obj:`is_decoder` argument of the configuration set to :obj:`True`.
+    To be used in a Seq2Seq model, the model needs to initialized with both :obj:`is_decoder`
+    argument and :obj:`add_cross_attention` set to :obj:`True`; an
+    :obj:`encoder_hidden_states` is then expected as an input to the forward pass.
+    """
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.config = config
+
+        self.embeddings = BertEmbeddingsMemory2(config)
+        self.encoder = BertEncoderMemory(config)
+        self.pooler = BertPooler(config)
+        # self.memory_module = BertHistoryGeneratorTokenLevel(config)
+        self.memory_module = BertHistoryGenerator(config, config.hidden_size)
+        self.init_weights()
+
+    def get_input_embeddings(self):
+        return self.embeddings.word_embeddings
+
+    def set_input_embeddings(self, value):
+        self.embeddings.word_embeddings = value
+
+    def _prune_heads(self, heads_to_prune):
+        """Prunes heads of the model.
+        heads_to_prune: dict of {layer_num: list of heads to prune in this layer}
+        See base class PreTrainedModel
+        """
+        for layer, heads in heads_to_prune.items():
+            self.encoder.layer[layer].attention.prune_heads(heads)
+
+    @add_start_docstrings_to_callable(BERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_code_sample_docstrings(
+        tokenizer_class=_TOKENIZER_FOR_DOC,
+        checkpoint="bert-base-uncased",
+        output_type=BaseModelOutputWithPooling,
+        config_class=_CONFIG_FOR_DOC,
+    )
+    def forward(
+        self,
+        memory_input_ids0=None,
+        memory_input_ids1=None,
+        input_len=None,
+        memory_len=None,
+        memory_attention_mask=None,
+        memory=None,
+        memory_segment=None,
+        memory_position_id=None,
+        memory_query=None,
+        memory_len_query=None,
+        memory_segment_query=None,
+        input_ids=None,
+        query_att_mask=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        r"""
+        encoder_hidden_states  (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`, `optional`):
+            Sequence of hidden-states at the output of the last layer of the encoder. Used in the cross-attention
+            if the model is configured as a decoder.
+        encoder_attention_mask (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
+            Mask to avoid performing attention on the padding token indices of the encoder input. This mask
+            is used in the cross-attention if the model is configured as a decoder.
+            Mask values selected in ``[0, 1]``:
+
+            - 1 for tokens that are **not masked**,
+            - 0 for tokens that are **maked**.
+        """
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if input_ids is not None and inputs_embeds is not None:
+            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
+        elif input_ids is not None:
+            input_shape = input_ids.size()
+        elif inputs_embeds is not None:
+            input_shape = inputs_embeds.size()[:-1]
+        else:
+            raise ValueError("You have to specify either input_ids or inputs_embeds")
+
+        device = input_ids.device if input_ids is not None else inputs_embeds.device
+
+        if attention_mask is None:
+            attention_mask = torch.ones(input_shape, device=device)
+        if token_type_ids is None:
+            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+
+        # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
+        # ourselves in which case we just need to make it broadcastable to all heads.
+        extended_query_att_mask = self.get_extended_attention_mask(query_att_mask, memory_query.size(), device)
+        extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape, device)
+        extended_memory_attention_mask: torch.Tensor = self.get_extended_attention_mask(memory_attention_mask, memory.size(), device)
+        # extended_memory_attention_mask: torch.Tensor = self.get_extended_attention_mask(memory_attention_mask, memory.size(), device)
+        # If a 2D or 3D attention mask is provided for the cross-attention
+        # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
+        encoder_extended_attention_mask = None
+
+        # Prepare head mask if needed
+        # 1.0 in head_mask indicate we keep the head
+        # attention_probs has shape bsz x n_heads x N x N
+        # input head_mask has shape [num_heads] or [num_hidden_layers x num_heads]
+        # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
+        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
+
+
+        embedding_output_tmp = self.embeddings(
+            input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
+        ,memory_ids=memory_input_ids0,memory=False)
+        memory_embed = self.embeddings(input_ids=memory, token_type_ids=memory_segment, memory_ids=memory_input_ids1,memory=False)
+        memory_embed_query = self.embeddings(input_ids=memory_query, token_type_ids=memory_segment_query, memory_ids=None,memory=False)
+        memory_embedding_output, memory_lambda = self.memory_module(memory_embed, memory_embed_query, memory_len_query, memory_len,0)
+        embedding_output, memory_lambda = self.memory_module(embedding_output_tmp, memory_embedding_output, memory_len, input_len,0)
+
+
+        encoder_outputs_mem = self.encoder(
+            memory_embedding_output,
+            self.embeddings.position_embeddings,
+            embedding_output,
+            memory_module=self.memory_module,
+            memory_len=input_len,
+            input_len=memory_len,
+            memory_att_mask=extended_attention_mask,
+            attention_mask=extended_memory_attention_mask,
+            head_mask=head_mask,
+            encoder_hidden_states=None,
+            encoder_attention_mask=None,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+
+        )
+
+        encoder_outputs = self.encoder(
+            embedding_output,
+            self.embeddings.position_embeddings,
+            memory_embed,
+            memory_module=self.memory_module,
+            memory_len=memory_len,
+            input_len=input_len,
+            memory_att_mask=extended_memory_attention_mask,
+            attention_mask=extended_attention_mask,
+            head_mask=head_mask,
+            encoder_hidden_states=memory_embed,
+            encoder_attention_mask=extended_memory_attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        # encoder_outputs_q = self.encoder(
+        #     memory_embed_query,
+        #     self.embeddings.position_embeddings,
+        #     embedding_output,
+        #     memory_module=self.memory_module,
+        #     memory_len=input_len,
+        #     input_len=memory_len_query,
+        #     memory_att_mask=extended_attention_mask,
+        #     attention_mask=extended_query_att_mask,
+        #     head_mask=head_mask,
+        #     encoder_hidden_states=memory_embed_query,
+        #     encoder_attention_mask=extended_attention_mask,
+        #     output_attentions=output_attentions,
+        #     output_hidden_states=output_hidden_states,
+        #     return_dict=return_dict,
+        # )
+
+
+
+        sequence_output = encoder_outputs[0]
+        sequence_output_mem = encoder_outputs_mem[0]
+        # sequence_output_q = encoder_outputs_q[0]
+
+        # args ={"question":memory_embed_query,"hidden_states":sequence_output, "history":sequence_output_mem, 
+        #        "question_attmask":extended_query_att_mask, "history_attmask":extended_memory_attention_mask}
+        # sequence_output = self.memory_module(**args)
+        sequence_output, _ =self.memory_module(sequence_output, sequence_output_mem, memory_len, input_len, 0)
+        pooled_output = self.pooler(sequence_output)
+
+    
+        if not return_dict:
+            return (sequence_output, pooled_output, ) + encoder_outputs[2:]
+
+        return BaseModelOutputWithPooling(
+            last_hidden_state=sequence_output,
+            pooler_output=pooled_output,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions,
+        )
+
+
+
 
 @add_start_docstrings(
     "The bare Bert Model transformer outputting raw hidden-states without any specific head on top.",

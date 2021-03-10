@@ -67,44 +67,6 @@ def compute_f1(a_gold, a_pred):
     f1 = (2 * precision * recall) / (precision + recall)
     return f1
 
-
-def get_raw_scores(examples, preds):
-    """
-    Computes the exact and f1 scores from the examples and the model predictions
-    """
-    exact_scores = {}
-    f1_scores = {}
-
-    for example in examples:
-        qas_id = example.qas_id
-        gold_answers = [answer["text"] for answer in example.answers if normalize_answer(answer["text"])]
-
-        if not gold_answers:
-            # For unanswerable questions, only correct answer is empty string
-            gold_answers = ["CANNOTANSWER"]
-
-        if qas_id not in preds:
-            print("Missing prediction for %s" % qas_id)
-            continue
-
-        prediction = preds[qas_id]
-        exact_scores[qas_id] = max(compute_exact(a, prediction) for a in gold_answers)
-        f1_scores[qas_id] = max(compute_f1(a, prediction) for a in gold_answers)
-
-    return exact_scores, f1_scores
-
-
-def apply_no_ans_threshold(scores, na_probs, qid_to_has_ans, na_prob_thresh):
-    new_scores = {}
-    for qid, s in scores.items():
-        pred_na = na_probs[qid] > na_prob_thresh
-        if pred_na:
-            new_scores[qid] = float(not qid_to_has_ans[qid])
-        else:
-            new_scores[qid] = s
-    return new_scores
-
-
 def make_eval_dict(exact_scores, f1_scores, qid_list=None):
     if not qid_list:
         total = len(exact_scores)
@@ -207,39 +169,6 @@ def find_all_best_thresh(main_eval, preds, exact_raw, f1_raw, na_probs, qid_to_h
     main_eval["best_exact_thresh"] = exact_thresh
     main_eval["best_f1"] = best_f1
     main_eval["best_f1_thresh"] = f1_thresh
-
-
-def RC_evaluate(examples, preds, no_answer_probs=None, no_answer_probability_threshold=1.0):
-    qas_id_to_has_answer = {example.qas_id: bool(example.answers) for example in examples}
-    has_answer_qids = [qas_id for qas_id, has_answer in qas_id_to_has_answer.items() if has_answer]
-    no_answer_qids = [qas_id for qas_id, has_answer in qas_id_to_has_answer.items() if not has_answer]
-
-
-    if no_answer_probs is None:
-        no_answer_probs = {k: 0.0 for k in preds}
-
-    exact, f1 = get_raw_scores(examples, preds)
-
-    exact_threshold = apply_no_ans_threshold(
-        exact, no_answer_probs, qas_id_to_has_answer, no_answer_probability_threshold
-    )
-    f1_threshold = apply_no_ans_threshold(f1, no_answer_probs, qas_id_to_has_answer, no_answer_probability_threshold)
-
-    evaluation = make_eval_dict(exact_threshold, f1_threshold)
-
-    if has_answer_qids:
-        has_ans_eval = make_eval_dict(exact_threshold, f1_threshold, qid_list=has_answer_qids)
-        merge_eval(evaluation, has_ans_eval, "HasAns")
-
-    if no_answer_qids:
-        no_ans_eval = make_eval_dict(exact_threshold, f1_threshold, qid_list=no_answer_qids)
-        merge_eval(evaluation, no_ans_eval, "NoAns")
-
-    if no_answer_probs:
-        find_all_best_thresh(evaluation, preds, exact, f1, no_answer_probs, qas_id_to_has_answer)
-
-    return evaluation
-
 
 def get_final_text(pred_text, orig_text, do_lower_case, verbose_logging=False):
     """Project the tokenized prediction back to the original text."""
@@ -413,8 +342,6 @@ def compute_predictions_logits(
 
     for (example_index, example) in enumerate(all_examples):
         features = example_index_to_features[example_index]
-        # IPython.embed()
-        # pdb.set_trace()
         # all_predictions[example.qas_id.split("_q#")[0]][example.qas_id]  =None
         # official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = None 
 
@@ -512,24 +439,24 @@ def compute_predictions_logits(
 
                 seen_predictions[final_text] = True
             else:
-                final_text = ""
+                final_text = "CANNOTANSWER"
                 seen_predictions[final_text] = True
 
             nbest.append(_NbestPrediction(text=final_text, start_logit=pred.start_logit, end_logit=pred.end_logit))
         # if we didn't include the empty option in the n-best, include it
         if version_2_with_negative:
-            if "" not in seen_predictions:
-                nbest.append(_NbestPrediction(text="", start_logit=null_start_logit, end_logit=null_end_logit))
+            if "CANNOTANSWER" not in seen_predictions:
+                nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=null_start_logit, end_logit=null_end_logit))
 
             # In very rare edge cases we could only have single null prediction.
             # So we just create a nonce prediction in this case to avoid failure.
             if len(nbest) == 1:
-                nbest.insert(0, _NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0))
+                nbest.insert(0, _NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0))
 
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
-            nbest.append(_NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0))
+            nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0))
 
         assert len(nbest) >= 1, "No valid predictions"
 
@@ -554,28 +481,22 @@ def compute_predictions_logits(
 
         assert len(nbest_json) >= 1, "No valid predictions"
 
-        # IPython.embed()
-        # pdb.set_trace()
-
         if not version_2_with_negative:
             official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = (nbest_json[0]["text"], "y", "y")
             all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": nbest_json[0]["text"], "yesno": "y", "followup":"y"}
-            # all_predictions[example.qas_id] = nbest_json[0]["text"]
         else:
             if not best_non_null_entry:
                 score_diff = 10
             else:
-                # predict "" iff the null score - the score of best non-null > threshold
                 score_diff = score_null - best_non_null_entry.start_logit - (best_non_null_entry.end_logit)
             scores_diff_json[example.qas_id] = score_diff
             if score_diff > null_score_diff_threshold:
-                # all_predictions[example.qas_id] = "CANNOTANSWER"
                 official_all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = ("CANNOTANSWER", "y", "y")
                 all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = {"best_span_str": "CANNOTANSWER", "yesno": "y", "followup":"y"}
             else:
                 official_all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = (best_non_null_entry.text, "y", "y")
                 all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = {"best_span_str": best_non_null_entry.text, "yesno": "y", "followup":"y"}
-                # all_predictions[example.qas_id] = best_non_null_entry.text
+
             all_nbest_json[example.qas_id] = nbest_json
     
     final_result = []
@@ -749,7 +670,7 @@ def compute_predictions_log_probs(
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
-            nbest.append(_NbestPrediction(text="", start_log_prob=-1e6, end_log_prob=-1e6))
+            nbest.append(_NbestPrediction(text="CANNOTANSWER", start_log_prob=-1e6, end_log_prob=-1e6))
 
         total_scores = []
         best_non_null_entry = None

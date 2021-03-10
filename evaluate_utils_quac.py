@@ -109,5 +109,4 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
       json.dump(metric_json, fout)
 
     # Compute the F1 and exact scores.
-    # results = RC_evaluate(examples, predictions)
     return metric_json

@@ -122,6 +122,9 @@ def convert_examples_to_features(
     unique_id = 1000000000
     example_index = 0
 
+    IPython.embed()
+    pdb.set_trace()
+
     for example_features in tqdm(
         features, total=len(features), desc="add example index and unique id", disable=not tqdm_enabled
     ):
@@ -526,8 +529,9 @@ def convert_dataset_to_examples(datasets, mode):
         start_position_character = None
         answer_text = None
         answers = []
+        answer_text_criterion = data['orig_answer']['text']
+        is_impossible = True if answer_text_criterion == 'CANNOTANSWER' else False
 
-        is_impossible = False
         answer = data['answers'][0]
         answer_text = answer['text']
         start_position_character = answer['answer_start']

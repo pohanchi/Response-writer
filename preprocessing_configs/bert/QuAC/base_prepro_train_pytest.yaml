@@ -4,7 +4,7 @@ is_dev: false
 stride: 128
 is_training: true
 examples: 100
-json_path: ./quac/train_v0.2.json
-output_name: ./preprocessing_files/bert/QuAC/base_pytest
+json_path: ../dataset_local/quac/train_v0.2.json
+output_name: ./preprocessing_files/bert/QuAC/base_pytest2
 pretrained_tokenizer: BertTokenizer
 pretrained_name: bert-base-uncased
