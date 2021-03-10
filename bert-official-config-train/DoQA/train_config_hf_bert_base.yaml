@@ -8,8 +8,8 @@ warmup_steps: 500
 adam_epsilon: 1.0e-12
 adam_beta1: 0.9
 adam_beta2: 0.999
-batch_size: 2
-gradient_accumulation_steps: 24
+batch_size: 4
+gradient_accumulation_steps: 12
 local_rank: -1
 seed: 42
 num_labels: 2

@@ -336,8 +336,8 @@ class BERTQA_memory(nn.Module):
                 memory_init_seg = torch.cat(memory_init_seg_list, dim=0)
             seg_memory_input.append(memory_init_seg)
             memory_input.append(memory)
-
-        reason_mask= pad_sequence(mask_input, batch_first=True)
+        
+        reason_mask = pad_sequence(mask_input, batch_first=True)
         reason_ids = pad_sequence(reason_input, batch_first=True)
         reason_seg = pad_sequence(seg_input,batch_first=True)
         memory_ids = pad_sequence(memory_input,batch_first=True)
@@ -364,6 +364,7 @@ class BERTQA_memory(nn.Module):
             "memory_query": memory_query,
             "memory_len_query":memory_len_query,
             "memory_segment_query":memory_segment_query,
+            "query_att_mask":memory_attention_mask_query,
         }
 
 

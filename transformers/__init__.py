@@ -300,6 +300,7 @@ if is_torch_available():
         BertModelinitial_from_mu_sigma,
         BertModelMemory2,
         BertInjectMemory,
+        HisBERTModel,
     )
     from .modeling_bert_generation import (
         BertGenerationDecoder,
