@@ -4507,9 +4507,7 @@ class HisBERTModel(BertPreTrainedModel):
         self.config = config
 
         self.embeddings = BertEmbeddingsMemory2(config)
-        self.embeddings2 = BertEmbeddingsMemory2(config)
         self.encoder = BertEncoderHisBERT(config)
-        self.encoder_generator = BertEncoderHisBERT(config)
         self.memory_module=BertHistoryGenerator3(config, config.hidden_dim)
         self.pooler = BertPooler(config)
         self.init_weights()
@@ -4616,9 +4614,9 @@ class HisBERTModel(BertPreTrainedModel):
         embedding_output_tmp = self.embeddings(
             input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
         ,memory_ids=memory_input_ids0,memory=False)
-        memory_embed = self.embeddings2(input_ids=memory, token_type_ids=memory_segment, memory_ids=memory_input_ids1,memory=False)
+        memory_embed = self.embeddings(input_ids=memory, token_type_ids=memory_segment, memory_ids=memory_input_ids1,memory=False)
 
-        encoder_outputs_mem = self.encoder_generator(
+        encoder_outputs_mem = self.encoder(
             memory_embed,
             self.embeddings.position_embeddings,
             embedding_output_tmp,
@@ -4658,7 +4656,7 @@ class HisBERTModel(BertPreTrainedModel):
         sequence_output_mem = encoder_outputs_mem[0]
         sequence_output = encoder_outputs[0]
 
-        encoder_outputs_mem = self.encoder_generator(
+        encoder_outputs_mem = self.encoder(
             sequence_output_mem,
             self.embeddings.position_embeddings,
             sequence_output,
