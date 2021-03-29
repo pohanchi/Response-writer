@@ -17,8 +17,6 @@ from transformers.tokenization_bert import BasicTokenizer
 
 logger = logging
 
-import IPython
-import pdb
 
 def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
@@ -81,7 +79,7 @@ def get_raw_scores(examples, preds):
             gold_answers = None
         if not gold_answers:
             # For unanswerable questions, only correct answer is empty string
-            gold_answers = [""]
+            gold_answers = ["CANNOTANSWER"]
 
         if qas_id not in preds:
             print("Missing prediction for %s" % qas_id)
@@ -210,10 +208,9 @@ def find_all_best_thresh(main_eval, preds, exact_raw, f1_raw, na_probs, qid_to_h
 
 
 def RC_evaluate(examples, preds, no_answer_probs=None, no_answer_probability_threshold=1.0):
-    qas_id_to_has_answer = {example.qas_id: bool(example.answers) for example in examples}
+    qas_id_to_has_answer = {example.qas_id: bool(example.answers['text'][0] != "CANNOTANSWER") for example in examples}
     has_answer_qids = [qas_id for qas_id, has_answer in qas_id_to_has_answer.items() if has_answer]
     no_answer_qids = [qas_id for qas_id, has_answer in qas_id_to_has_answer.items() if not has_answer]
-
 
     if no_answer_probs is None:
         no_answer_probs = {k: 0.0 for k in preds}
@@ -494,13 +491,13 @@ def compute_predictions_logits(
                 orig_doc_end = feature.token_to_orig_map[pred.end_index]
                 orig_tokens = example.doc_tokens[orig_doc_start : (orig_doc_end + 1)]
 
-                tok_text = tokenizer.convert_tokens_to_string(tok_tokens)
+                # tok_text = tokenizer.convert_tokens_to_string(tok_tokens)
 
-                # tok_text = " ".join(tok_tokens)
-                #
-                # # De-tokenize WordPieces that have been split off.
-                # tok_text = tok_text.replace(" ##", "")
-                # tok_text = tok_text.replace("##", "")
+                tok_text = " ".join(tok_tokens)
+                
+                # De-tokenize WordPieces that have been split off.
+                tok_text = tok_text.replace(" ##", "")
+                tok_text = tok_text.replace("##", "")
 
                 # Clean whitespace
                 tok_text = tok_text.strip()
@@ -513,24 +510,24 @@ def compute_predictions_logits(
 
                 seen_predictions[final_text] = True
             else:
-                final_text = ""
+                final_text = "CANNOTANSWER"
                 seen_predictions[final_text] = True
 
             nbest.append(_NbestPrediction(text=final_text, start_logit=pred.start_logit, end_logit=pred.end_logit))
         # if we didn't include the empty option in the n-best, include it
         if version_2_with_negative:
-            if "" not in seen_predictions:
-                nbest.append(_NbestPrediction(text="", start_logit=null_start_logit, end_logit=null_end_logit))
+            if "CANNOTANSWER" not in seen_predictions:
+                nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=null_start_logit, end_logit=null_end_logit))
 
             # In very rare edge cases we could only have single null prediction.
             # So we just create a nonce prediction in this case to avoid failure.
             if len(nbest) == 1:
-                nbest.insert(0, _NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0))
+                nbest.insert(0, _NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0))
 
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
-            nbest.append(_NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0))
+            nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0))
 
         assert len(nbest) >= 1, "No valid predictions"
 
@@ -563,16 +560,17 @@ def compute_predictions_logits(
             score_diff = score_null - best_non_null_entry.start_logit - (best_non_null_entry.end_logit)
             scores_diff_json[example.qas_id] = score_diff
             if score_diff > null_score_diff_threshold:
-                all_predictions[example.qas_id] = ""
+                all_predictions[example.qas_id] = "CANNOTANSWER"
             else:
                 all_predictions[example.qas_id] = best_non_null_entry.text
+            all_groudth_truths[example.qas_id] = [answer for answer in example.answers['text'] if normalize_answer(answer)]
         all_nbest_json[example.qas_id] = nbest_json
 
     if output_prediction_file:
         with open(output_prediction_file, "w") as writer:
             writer.write(json.dumps(all_predictions, indent=4) + "\n")
 
-        with open(output_prediction_file+"_groud_truth.json", "w") as writer:
+        with open(output_prediction_file+"_ground_truth.json", "w") as writer:
             writer.write(json.dumps(all_groudth_truths, indent=4) + "\n")
         
 
@@ -732,7 +730,7 @@ def compute_predictions_log_probs(
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
-            nbest.append(_NbestPrediction(text="", start_log_prob=-1e6, end_log_prob=-1e6))
+            nbest.append(_NbestPrediction(text="CANNOTANSWER", start_log_prob=-1e6, end_log_prob=-1e6))
 
         total_scores = []
         best_non_null_entry = None

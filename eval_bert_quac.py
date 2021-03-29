@@ -7,7 +7,7 @@ import wandb
 import IPython
 import pdb
 import transformers
-from module import BERTQA_initial, BERTQA_memory, BERTQA
+from module import BERTQA_initial, BERTQA_memory, BERTQA, BERTQA_memoryreuse
 from transformers import BertTokenizer
 from evaluate_utils import evaluate 
 from extract_feature import *

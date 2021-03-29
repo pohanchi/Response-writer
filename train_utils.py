@@ -13,7 +13,7 @@ from extract_feature import *
 from evaluate_utils import *
 
 
-def train(model, cache_train_file, cache_validation_file, train_args, tokenizer, wandb):
+def train(model, cache_train_file, cache_validation_file, train_args, tokenizer, wandb, cache_dev_file=None, **kwargs):
 
     model = model.to(train_args['device'])
     # wandb.watch(model)
@@ -30,18 +30,18 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
 
     optimizer_grouped_parameters = [
         {
-            "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if ("memory_module" in n or "dialog" in n or "embeddings" in n)],
-            "weight_decay": train_args['weight_decay'],
+            "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if not any( nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
         },
-                {
-            "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if ("memory_module" not in n and "dialog" not in n and "embeddings" not in n)],
-            "weight_decay": train_args['weight_decay'],
+        {
+            "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if any( nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
         },
     ]
     
     optimizer = AdamW(optimizer_grouped_parameters, betas=(train_args['adam_beta1'],train_args["adam_beta2"]),lr=train_args['learning_rate'], eps=train_args['adam_epsilon'])
     scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps=train_args['warmup_steps'], num_training_steps=t_total
+       optimizer, num_warmup_steps=train_args['warmup_steps'], num_training_steps=t_total
     )
 
     # Train!
@@ -124,7 +124,15 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                 if train_args['local_rank'] in [-1, 0] and train_args['logging_steps'] > 0 and global_step % train_args['logging_steps'] == 0:
                     # Only evaluate when single GPU otherwise metrics may not average well
                     record = {}
+                    record_train = {}
                     if train_args['local_rank'] == -1 and train_args['evaluate_during_training']:
+                        if cache_dev_file is not None:
+                            results_dev = evaluate(train_args, cache_dev_file, model, tokenizer)
+                            for key, value in results_dev.items():
+                                record_train["train_{}".format(key)] = value
+                            wandb.log(record_train, step=global_step)
+                            print("training_F1_EM result: ",record_train)
+
                         results = evaluate(train_args, cache_validation_file, model, tokenizer)
                         for key, value in results.items():
                             record["eval_{}".format(key)] = value

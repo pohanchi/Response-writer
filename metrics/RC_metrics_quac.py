@@ -19,9 +19,6 @@ from .quac_metrics import *
 
 logger = logging
 
-import IPython
-import pdb
-
 def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
 
@@ -420,13 +417,13 @@ def compute_predictions_logits(
                 orig_doc_end = feature.token_to_orig_map[pred.end_index]
                 orig_tokens = example.doc_tokens[orig_doc_start : (orig_doc_end + 1)]
 
-                tok_text = tokenizer.convert_tokens_to_string(tok_tokens)
+                # tok_text = tokenizer.convert_tokens_to_string(tok_tokens)
 
-                # tok_text = " ".join(tok_tokens)
-                #
-                # # De-tokenize WordPieces that have been split off.
-                # tok_text = tok_text.replace(" ##", "")
-                # tok_text = tok_text.replace("##", "")
+                tok_text = " ".join(tok_tokens)
+                
+                # De-tokenize WordPieces that have been split off.
+                tok_text = tok_text.replace(" ##", "")
+                tok_text = tok_text.replace("##", "")
 
                 # Clean whitespace
                 tok_text = tok_text.strip()
@@ -491,11 +488,11 @@ def compute_predictions_logits(
                 score_diff = score_null - best_non_null_entry.start_logit - (best_non_null_entry.end_logit)
             scores_diff_json[example.qas_id] = score_diff
             if score_diff > null_score_diff_threshold:
-                official_all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = ("CANNOTANSWER", "y", "y")
-                all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = {"best_span_str": "CANNOTANSWER", "yesno": "y", "followup":"y"}
+                official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = ("CANNOTANSWER", "y", "y")
+                all_predictions[example.qas_id.split("_q#")[0])][example.qas_id] = {"best_span_str": "CANNOTANSWER", "yesno": "y", "followup":"y"}
             else:
-                official_all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = (best_non_null_entry.text, "y", "y")
-                all_predictions["_".join(example.qas_id.split("_")[:-1])][example.qas_id] = {"best_span_str": best_non_null_entry.text, "yesno": "y", "followup":"y"}
+                official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = (best_non_null_entry.text, "y", "y")
+                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": best_non_null_entry.text, "yesno": "y", "followup":"y"}
 
             all_nbest_json[example.qas_id] = nbest_json
     

@@ -1,0 +1,10 @@
+mode: test
+ratio: 1.0
+is_dev: false
+stride: 128
+seq_length: 384
+is_training: false
+json_path: ../dataset_local/quac/val_v0.2.json
+output_name: ../preprocessing_files/bart/QuAC/base_dev_truncated
+pretrained_tokenizer: BartTokenizer
+pretrained_name: facebook/bart-base

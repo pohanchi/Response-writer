@@ -17,8 +17,6 @@ from transformers.tokenization_bert import BasicTokenizer
 
 logger = logging
 
-import IPython
-import pdb
 
 def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
@@ -81,7 +79,7 @@ def get_raw_scores(examples, preds):
             gold_answers = None
         if not gold_answers:
             # For unanswerable questions, only correct answer is empty string
-            gold_answers = [""]
+            gold_answers = ["CANNOTANSWER"]
 
         if qas_id not in preds:
             print("Missing prediction for %s" % qas_id)
@@ -493,13 +491,13 @@ def compute_predictions_logits(
                 orig_doc_end = feature.token_to_orig_map[pred.end_index]
                 orig_tokens = example.doc_tokens[orig_doc_start : (orig_doc_end + 1)]
 
-                tok_text = tokenizer.convert_tokens_to_string(tok_tokens)
+                # tok_text = tokenizer.convert_tokens_to_string(tok_tokens)
 
-                # tok_text = " ".join(tok_tokens)
-                #
-                # # De-tokenize WordPieces that have been split off.
-                # tok_text = tok_text.replace(" ##", "")
-                # tok_text = tok_text.replace("##", "")
+                tok_text = " ".join(tok_tokens)
+                
+                # De-tokenize WordPieces that have been split off.
+                tok_text = tok_text.replace(" ##", "")
+                tok_text = tok_text.replace("##", "")
 
                 # Clean whitespace
                 tok_text = tok_text.strip()
@@ -519,17 +517,17 @@ def compute_predictions_logits(
         # if we didn't include the empty option in the n-best, include it
         if version_2_with_negative:
             if "" not in seen_predictions:
-                nbest.append(_NbestPrediction(text="", start_logit=null_start_logit, end_logit=null_end_logit))
+                nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=null_start_logit, end_logit=null_end_logit))
 
             # In very rare edge cases we could only have single null prediction.
             # So we just create a nonce prediction in this case to avoid failure.
             if len(nbest) == 1:
-                nbest.insert(0, _NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0))
+                nbest.insert(0, _NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0))
 
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
-            nbest.append(_NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0))
+            nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0))
 
         assert len(nbest) >= 1, "No valid predictions"
 
@@ -561,7 +559,7 @@ def compute_predictions_logits(
             score_diff = score_null - best_non_null_entry.start_logit - (best_non_null_entry.end_logit)
             scores_diff_json[example.qas_id] = score_diff
             if score_diff > null_score_diff_threshold:
-                all_predictions[example.qas_id] = ""
+                all_predictions[example.qas_id] = "CANNOTANSWER"
             else:
                 all_predictions[example.qas_id] = best_non_null_entry.text
         all_nbest_json[example.qas_id] = nbest_json
@@ -726,7 +724,7 @@ def compute_predictions_log_probs(
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
-            nbest.append(_NbestPrediction(text="", start_log_prob=-1e6, end_log_prob=-1e6))
+            nbest.append(_NbestPrediction(text="CANNOTANSWER", start_log_prob=-1e6, end_log_prob=-1e6))
 
         total_scores = []
         best_non_null_entry = None

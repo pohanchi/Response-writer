@@ -4,7 +4,11 @@ import argparse
 import yaml
 import wandb
 import transformers
-from module import BERTQA_initial, BERTQA_memory, BERTQA
+from module import BERTQA_initial, BERTQA_memory, BERTQA, BERTQA_memoryreuse, \
+                   BERTQA_memory3, BERTQA_memory4, BERTQA_memory5, BERTQA_memory6, \
+                   BERTQA_memory10, BERTQA_memory11, BERTQA_memory12, BERTQA_memory115, BERTQA_memory13, BERTQA_memory14, BERTQA_memory15, BERTQA_memory16, \
+                   BERTQA_memory17
+
 from module import ALBERTQA_memory, ALBERTQA
 from module import RobertaQA_memory, RobertaQA
 from transformers import BertTokenizer, RobertaTokenizer, AlbertTokenizer
@@ -37,7 +41,11 @@ def main():
     config['device'] = torch.device("cuda")
     config['n_gpu'] = torch.cuda.device_count()
 
-    train(model, config['train_feature_file'], config['eval_feature_file'], config, tokenizer, wandb)
+    dev_feature_file = None
+    if config.get("dev_feature_file", None):
+        dev_feature_file = config['dev_feature_file']
+
+    train(model, config['train_feature_file'], config['eval_feature_file'], config, tokenizer, wandb, dev_feature_file)
 
 if __name__ == '__main__':
     main()

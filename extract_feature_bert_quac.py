@@ -122,9 +122,6 @@ def convert_examples_to_features(
     unique_id = 1000000000
     example_index = 0
 
-    IPython.embed()
-    pdb.set_trace()
-
     for example_features in tqdm(
         features, total=len(features), desc="add example index and unique id", disable=not tqdm_enabled
     ):

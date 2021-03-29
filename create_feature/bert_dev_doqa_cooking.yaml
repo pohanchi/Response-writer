@@ -1,6 +1,6 @@
 domain: "cooking"
-mode: "dev"
+mode: "validation"
 is_dev: True
 is_training: True
 ratio: 0.9
-output_name: ./bert/sep_doqa/doqa_dev_file_cooking
+output_name: ../preprocessing_files/bert/DoQA/dev_file_cooking_v2

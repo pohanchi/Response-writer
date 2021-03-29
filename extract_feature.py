@@ -248,21 +248,6 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
         question_seg = np.zeros_like(np.array(truncated_query))
         seg_value = [ 1, -1, -2 ]
 
-        # for i in range(len(indexes)-1):
-        #     if i < 3:
-        #         if i+1 == (len(indexes)-1):
-        #             question_seg[1:indexes[i]+1] = seg_value[i]
-        #         else:
-        #             question_seg[indexes[i+1]+1:indexes[i]+1] = seg_value[i]
-        #     else:
-        #         if i+1 == (len(indexes)-1):
-        #             question_seg[1:indexes[i]+1] = 0
-        #         else:
-        #             question_seg[indexes[i+1]:indexes[i]+1] = 0
-        #     if i == 0:
-        #         question_start = indexes[i+1]+1
-        #         question_len = indexes[0]+1
-        # seg_value = [ 0, 1]
         for i in range(len(indexes)-1):
             if i < 3:
                 if i+1 == (len(indexes)-1):

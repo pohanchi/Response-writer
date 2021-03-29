@@ -1,0 +1,6 @@
+domain: "cooking"
+mode: "validation"
+is_dev: True
+is_training: False
+ratio: 0.9
+output_name: ../preprocessing_files/bart/DoQA/dev_file_cooking

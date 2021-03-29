@@ -62,14 +62,12 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
             feature_indices = batch[11]
 
             # XLNet and XLM use more arguments for their predictions
-
             outputs = model(**inputs)
 
         for i, feature_index in enumerate(feature_indices):
 
             eval_feature = features[feature_index.item()]
             unique_id = int(eval_feature.unique_id)
-
             output = [to_list(output[i]) for output in outputs]
 
 

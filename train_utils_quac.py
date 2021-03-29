@@ -29,12 +29,12 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
 
     optimizer_grouped_parameters = [
         {
-            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if ("memory_module" in n or "dialog" in n or "embeddings" in n)],
-            "weight_decay": train_args['weight_decay'],
+            "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if not any( nd in n for nd in no_decay) ],
+            "weight_decay": 0.01,
         },
-                {
-            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if ("memory_module" not in n and "dialog" not in n and "embeddings" not in n)],
-            "weight_decay": train_args['weight_decay'],
+        {
+            "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if any( nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
         },
     ]
     

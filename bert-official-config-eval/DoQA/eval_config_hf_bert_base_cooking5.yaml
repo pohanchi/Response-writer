@@ -1,0 +1,3 @@
+saved_directory: ../CQAModel/DoQA/Bert-base5/sep-dev-in_training
+eval_file: ../preprocessing_files/bert/DoQA/base_cooking_test
+exp_name: eval_hf_bert_base_cooking

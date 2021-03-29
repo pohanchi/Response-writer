@@ -1,0 +1,3 @@
+saved_directory: ../CQAModel/DoQA/Bart-base/sep-dev-in_training
+eval_file: ../preprocessing_files/bart/DoQA/test_file_movies
+exp_name: eval_original_bart_base_movies

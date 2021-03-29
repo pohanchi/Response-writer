@@ -1,6 +1,6 @@
 bottleneck_size: 16
 add_cross_attention: false
-exp_name: DoQAsep_hf_bert_base_uncased_bottleneck_quac_pohancomputer
+exp_name: DoQAsep_hf_bert_base_uncased_bottleneck_quac_bs
 epoches: 10
 weight_decay: 0.0
 learning_rate: 0.00005
@@ -30,7 +30,7 @@ train_feature_file: ../preprocessing_files/bert/QuAC/base_train_truncated
 eval_feature_file: ../preprocessing_files/bert/QuAC/base_dev_truncated
 eval_json: ../dataset_local/quac/val_v0.2.json
 
-model: BERTQA_memory
+model: BERTQA_memory3
 pretrained_name: bert-base-uncased
 pretrained_tokenizer: BertTokenizer
 
