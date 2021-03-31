@@ -259,9 +259,6 @@ def convert_examples_to_features(
             )
         )
 
-    IPython.embed()
-    pdb.set_trace()
-
     new_features = []
     unique_id = 1000000000
     example_index = 0
@@ -707,9 +704,6 @@ def convert_dataset_to_examples(datasets, mode):
             
         else:
             question  = question + pre_proc(data['question']) + " [SEP]"
-
-        # IPython.embed()
-        # pdb.set_trace()
 
         dialog_act = data['dialog_act']
 

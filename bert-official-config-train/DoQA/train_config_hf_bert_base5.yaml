@@ -1,6 +1,6 @@
 bottleneck_size: 16
 add_cross_attention: False
-exp_name: DoQAsep_hf_bert_base_uncased_bottleneck_16_document_top64_on_layer1andlayer11_only
+exp_name: DoQAsep_hf_bert_base_uncased_bottleneck_mem_layer1_both_and_layer12_mem_to_doc_only
 epoches: 20
 weight_decay: 0.0
 learning_rate: 0.00005
@@ -30,7 +30,7 @@ train_feature_file: ../preprocessing_files/devsplit_in_train/bert/sep_doqa/doqa_
 # dev_feature_file: ../preprocessing_files/devsplit_in_train/bert/sep_doqa/doqa_train_file_cooking
 eval_feature_file: ../preprocessing_files/devsplit_in_train/bert/sep_doqa/doqa_dev_file_cooking
 
-model: BERTQA_memory17
+model: BERTQA_memory18
 pretrained_name: bert-base-uncased
 
 model_config:
