@@ -1,0 +1,10 @@
+mode: train
+ratio: 1.0
+is_dev: false
+stride: 128
+seq_length: 384
+is_training: true
+json_path: ../dataset_local/quac/train_v0.2.json
+output_name: ../preprocessing_files/bert/QuAC/base_train_truncated_HAE
+pretrained_tokenizer: BertTokenizer
+pretrained_name: bert-base-uncased

@@ -489,7 +489,7 @@ def compute_predictions_logits(
             scores_diff_json[example.qas_id] = score_diff
             if score_diff > null_score_diff_threshold:
                 official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = ("CANNOTANSWER", "y", "y")
-                all_predictions[example.qas_id.split("_q#")[0])][example.qas_id] = {"best_span_str": "CANNOTANSWER", "yesno": "y", "followup":"y"}
+                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": "CANNOTANSWER", "yesno": "y", "followup":"y"}
             else:
                 official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = (best_non_null_entry.text, "y", "y")
                 all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": best_non_null_entry.text, "yesno": "y", "followup":"y"}

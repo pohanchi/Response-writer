@@ -1,0 +1,3 @@
+saved_directory: ../CQAModel/DoQA/Bert-HAE/sep-dev-in_training
+eval_file: ../preprocessing_files/bert/DoQA/test_file_movies_add_HAE
+exp_name: eval_hae_bert_base_movies

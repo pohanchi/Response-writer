@@ -56,14 +56,15 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
                 "q_start": batch[7],
                 "dialog_act": batch[8],
                 "start_positions":None,
-                "end_positions": None
+                "end_positions": None,
+                "history_starts": batch[12] if len(batch) >= 14 else None,
+                "history_ends": batch[13] if len(batch) >= 14 else None,
             }
 
 
             feature_indices = batch[11]
 
             # XLNet and XLM use more arguments for their predictions
-
             outputs = model(**inputs)
 
         for i, feature_index in enumerate(feature_indices):

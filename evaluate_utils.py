@@ -43,7 +43,7 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
         batch = tuple(t.to(train_args['device']) for t in batch)
 
         with torch.no_grad():
-
+            
             inputs = {
                 "c_ids": batch[0],
                 "c_att_masks": batch[1],
@@ -56,8 +56,9 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
                 "dialog_act": batch[8],
                 "start_positions":None,
                 "end_positions": None,
+                "history_starts":batch[12] if len(batch) >= 14 else None,
+                "history_ends": batch[13] if len(batch) >= 14 else None,
             }
-
 
             feature_indices = batch[11]
 

@@ -86,13 +86,13 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
                 "c_att_masks": batch[1],
                 "c_len": batch[2],
                 "q_ids": batch[3],
-                "q_segs":batch[4],
-                "q_att_masks": batch[5],
                 "q_len": batch[6],
                 "q_start": batch[7],
                 "dialog_act": batch[8],
                 "start_positions":batch[9],
                 "end_positions": batch[10],
+                "history_starts": batch[14] if len(batch) >= 16 else None,
+                "history_ends": batch[15] if len(batch) >= 16 else None,
             }
 
             if train_args['fp16']:

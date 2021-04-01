@@ -13,6 +13,8 @@ import random
 import re
 import time
 import string
+import os
+import pickle
 import torch_optimizer as optim
 import torch.nn.functional as F
 from utils import logging
@@ -289,11 +291,16 @@ def convert_examples_to_features(
         all_cls_index = torch.tensor([f.cls_index for f in features],dtype=torch.long)
         all_p_mask = pad_sequence([torch.tensor(f.p_mask, dtype=torch.float) for f in features],batch_first=True)
         all_is_impossible = torch.tensor([f.is_impossible for f in features],dtype=torch.float)
+        all_history_start = pad_sequence([torch.tensor(f.history_start_list, dtype=torch.long) for f in features], batch_first=True)
+        all_history_end = pad_sequence([torch.tensor(f.history_end_list, dtype=torch.long) for f in features], batch_first=True)
 
         if not is_training:
             all_feature_index = torch.arange(all_input_ids.size(0), dtype=torch.long)
             dataset = TensorDataset(
-                all_input_ids, all_attention_masks, all_context_len, all_question_ids, all_question_seg, all_question_attention_masks,all_question_len,all_question_start,all_dialog_act,  all_cls_index, all_p_mask, all_feature_index
+                all_input_ids, all_attention_masks, all_context_len, all_question_ids, \
+                all_question_seg, all_question_attention_masks, all_question_len, all_question_start, all_dialog_act,\
+                all_cls_index, all_p_mask, all_feature_index, \
+                all_history_start, all_history_end,
             )
         else:
 
@@ -314,6 +321,8 @@ def convert_examples_to_features(
                 all_cls_index,
                 all_p_mask,
                 all_is_impossible,
+                all_history_start,
+                all_history_end,
             )
 
         return features, dataset
@@ -365,6 +374,23 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         )
 
     spans = []
+
+    history_span_modify = []
+    # handle history answer embedding
+    for item in example.history_span_list:
+        if item[0] == -1:
+            continue
+        history_start_position = orig_to_tok_index[item[0]]
+        if item[1] < len(example.doc_tokens) - 1:
+            history_end_position = orig_to_tok_index[item[1]+1] - 1
+        else:
+            history_end_position = len(all_doc_tokens) - 1
+        
+        (tok_history_start_position, tok_history_end_position) = _improve_answer_span(
+            all_doc_tokens, history_start_position, history_end_position, tokenizer, item[2]
+        )
+        history_span_modify.append((tok_history_start_position, tok_history_end_position))        
+
 
     truncated_query = tokenizer.encode(
         example.question_text, add_special_tokens=False, truncation=False)
@@ -533,6 +559,19 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
                 start_position = tok_start_position - doc_start + doc_offset
                 end_position = tok_end_position - doc_start + doc_offset
         
+        history_in_context =[]
+
+        for index in range(len(history_span_modify)):
+            doc_start = span["start"]
+            doc_end = span["start"] + span["length"] - 1
+            doc_offset = 1
+            if not history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end:
+                continue
+            else:
+                start_history_position = history_span_modify[index][0] - doc_start + doc_offset
+                end_history_position = history_span_modify[index][1] - doc_start + doc_offset
+                history_in_context.append((start_history_position, end_history_position))
+        
         features.append(
             RCFeatures(
                 span["input_ids"],
@@ -555,6 +594,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
                 end_position=end_position,
                 is_impossible=span_is_impossible,
                 qas_id=example.qas_id,
+                history_span_list=history_in_context,
             )
         )
     return features
@@ -624,6 +664,7 @@ class RCExample:
         end_position_character,
         answers=[],
         is_impossible=False,
+        history_span_list=[],
     ):
         self.qas_id = qas_id
         self.question_text = question_text
@@ -632,6 +673,8 @@ class RCExample:
         self.is_impossible = is_impossible
         self.dialog_act = dialog_act
         self.answers = answers
+        self.history_origin = history_span_list
+        # history_span_list = [ (answer_start, answer_end, ans_text) ]
 
         self.start_position, self.end_position = 0, 0
 
@@ -653,7 +696,13 @@ class RCExample:
 
         self.doc_tokens = doc_tokens
         self.char_to_word_offset = char_to_word_offset
-
+        self.history_span_list = []
+        for i in range(len(self.history_origin)):
+            if self.history_origin[i][0] == -1:
+                continue
+            start_position_history = char_to_word_offset[self.history_origin[i][0]]
+            end_position_history = char_to_word_offset[min(self.history_origin[i][1], len(char_to_word_offset)-1)]
+            self.history_span_list.append([start_position_history, end_position_history, self.history_origin[i][2]])
         # Start and end positions only has a value during evaluation.
         if start_position_character is not None and end_position_character is not None and not is_impossible:
             self.start_position = char_to_word_offset[start_position_character]
@@ -669,7 +718,7 @@ def convert_dataset_to_examples(datasets, mode):
         start_position_character = None
         answer_text = None
         answers = []
-
+        history_span_list = []
 
         if data["is_impossible"] == True and not data['answers'][0]['text'].lower() == "yes" and not data['answers'][0]['text'].lower() == "no":
             is_impossible = True
@@ -698,6 +747,8 @@ def convert_dataset_to_examples(datasets, mode):
             for i in range(previous,1,1):
                 history = datasets[mode][index+i]
                 if i !=0:
+                    history_span_list.append([history['answers'][0]['answer_start'], history['answers'][0]['answer_end'], history['answers'][0]['text']])
+
                     question = question + pre_proc(history['question']) + " " + history['answers'][0]['gold_ans'] + " " +"[SEP]" + " "
                 else:
                     question = question + pre_proc(history['question']) + " " +"[SEP]"
@@ -715,7 +766,8 @@ def convert_dataset_to_examples(datasets, mode):
                             start_position_character=start_position_character, 
                             end_position_character=end_position_character,
                             is_impossible=is_impossible,
-                            answers=answers)
+                            answers=answers,
+                            history_span_list=history_span_list)
     
         examples.append(example)
 
@@ -767,6 +819,7 @@ class RCFeatures:
         end_position,
         is_impossible,
         qas_id: str = None,
+        history_span_list=[]
     ):
         self.input_ids = input_ids
         self.attention_mask = attention_mask
@@ -789,6 +842,15 @@ class RCFeatures:
         self.end_position = end_position
         self.is_impossible = is_impossible
         self.qas_id = qas_id
+        
+        self.history_start_list = []
+        self.history_end_list = []
+        
+        for item in history_span_list:
+            self.history_start_list.append(item[0])
+            self.history_end_list.append(item[1])
+        
+
 
 class RCResult:
     """
@@ -822,15 +884,15 @@ def extract_and_save_feature(dataset_dict, mode, tokenizer, is_training, name):
 
 if __name__ == '__main__':
 
-    mode = "test"
-    name = "coqa/coqa-dev-v1.0.json"
-    is_training = False
+    mode = "train"
+    name = "../dataset_local/coqa/coqa-train-v1.0.json"
+    is_training = True
     is_dev = False
     dataset_raw = []
     max_seq_length = 384
     stride = 128
     ratio = 1
-    cached_features_file = "preprocessing_files/bert/CoQA/dev_clean_truncated"
+    cached_features_file = "../preprocessing_files/bert/CoQA/train_clean_truncated_add_hae"
     
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased") 
     data = json.load(open(name))['data']
@@ -838,48 +900,53 @@ if __name__ == '__main__':
 
 
     nlp = spacy.load("en", disable=['parser'])
+    
+    if os.path.exists(f"../dataset_local/coqa/dump_complete_{mode}.p"):
+        print(f"load preload datset from ../dataset_local/coqa/dump_complete_{mode}.p")
+        dataset_dict = pickle.load(open(f"../dataset_local/coqa/dump_complete_{mode}.p","rb"))
+    else:
+        print("file not exist, create a pickle file to preload in the next time ..")
+        # preprocess data 
+        for pa_pairs in tqdm(data):
+            # remove redundant character to stablize extracting feature
+            story = pa_pairs['story']
+            context = [pre_proc(story)]
+            doc = [context for context in nlp.pipe(context)][0]
+            unnormed_tokens = [w.text for w in doc]
 
-    # preprocess data 
-    for pa_pairs in tqdm(data):
-        # remove redundant character to stablize extracting feature
-        story = pa_pairs['story']
-        context = [pre_proc(story)]
-        doc = [context for context in nlp.pipe(context)][0]
-        unnormed_tokens = [w.text for w in doc]
+            for idx in range(len(pa_pairs['questions'])):
 
-        for idx in range(len(pa_pairs['questions'])):
+                data_pair = {}
+                data_pair['question'] = pa_pairs['questions'][idx]['input_text']
+                data_pair['id'] = pa_pairs['id'] + "_q#" + str(pa_pairs['questions'][idx]['turn_id']-1)
+                data_pair['is_impossible'] = False
 
-            data_pair = {}
-            data_pair['question'] = pa_pairs['questions'][idx]['input_text']
-            data_pair['id'] = pa_pairs['id'] + "_q#" + str(pa_pairs['questions'][idx]['turn_id']-1)
-            data_pair['is_impossible'] = False
+                if pa_pairs['answers'][idx]['span_text'] != "unknown":
 
-            if pa_pairs['answers'][idx]['span_text'] != "unknown":
+                    if pa_pairs['answers'][idx]['input_text'].lower() == "yes" or pa_pairs['answers'][idx]['input_text'].lower() == "no":
+                        data_pair['dialog_act'] = 1 if  pa_pairs['answers'][idx]['input_text'].lower() == "yes" else 2
+                        data_pair['is_impossible'] = True
+                        data_pair['answers'] = [{'text':pa_pairs['answers'][idx]['input_text'], 'answer_start':-1, 'answer_end':-1, 'gold_ans':pa_pairs['answers'][idx]['input_text'].lower()}]
 
-                if pa_pairs['answers'][idx]['input_text'].lower() == "yes" or pa_pairs['answers'][idx]['input_text'].lower() == "no":
-                    data_pair['dialog_act'] = 1 if  pa_pairs['answers'][idx]['input_text'].lower() == "yes" else 2
-                    data_pair['is_impossible'] = True
-                    data_pair['answers'] = [{'text':pa_pairs['answers'][idx]['input_text'], 'answer_start':-1, 'answer_end':-1, 'gold_ans':pa_pairs['answers'][idx]['input_text'].lower()}]
+                    else:
+                        data_pair['dialog_act'] = 3
+                        answer, char_i_span, char_j_span = free_text_to_span(pre_proc(pa_pairs['answers'][idx]['span_text']), context[0])
+                        answer, char_i, char_j = free_text_to_span(pa_pairs['answers'][idx]['input_text'] ,answer)
 
+                        ans_start =char_i_span + char_i
+                        ans_end =char_j_span + char_j
+
+                        data_pair['answers'] = [{'text':answer, 'answer_start':int(ans_start), 'answer_end':int(ans_end), 'gold_ans':pa_pairs['answers'][idx]['input_text']}]
                 else:
-                    data_pair['dialog_act'] = 3
-                    answer, char_i_span, char_j_span = free_text_to_span(pre_proc(pa_pairs['answers'][idx]['span_text']), context[0])
-                    answer, char_i, char_j = free_text_to_span(pa_pairs['answers'][idx]['input_text'] ,answer)
 
-                    ans_start =char_i_span + char_i
-                    ans_end =char_j_span + char_j
-
-                    data_pair['answers'] = [{'text':answer, 'answer_start':int(ans_start), 'answer_end':int(ans_end), 'gold_ans':pa_pairs['answers'][idx]['input_text']}]
-            else:
-
-                data_pair['dialog_act'] = 0
-                data_pair['answers'] = [{'text':"unknown", 'answer_start': -1, 'answer_end':-1,'gold_ans':pa_pairs['answers'][idx]['input_text'].lower()}]
-                data_pair['is_impossible'] = True
-            
-            data_pair['context'] = context[0]
-            dataset_raw.append(deepcopy(data_pair))
-
-    dataset_dict[mode] = dataset_raw
+                    data_pair['dialog_act'] = 0
+                    data_pair['answers'] = [{'text':"unknown", 'answer_start': -1, 'answer_end':-1,'gold_ans':pa_pairs['answers'][idx]['input_text'].lower()}]
+                    data_pair['is_impossible'] = True
+                
+                data_pair['context'] = context[0]
+                dataset_raw.append(deepcopy(data_pair))
+            dataset_dict[mode] = dataset_raw
+            pickle.dump(dataset_dict, open(f"../dataset_local/coqa/dump_complete_{mode}.p","wb"))
 
     examples = convert_dataset_to_examples(dataset_dict,mode)
 

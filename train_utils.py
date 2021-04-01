@@ -83,13 +83,13 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                 "c_att_masks": batch[1],
                 "c_len": batch[2],
                 "q_ids": batch[3],
-                "q_segs":batch[4],
-                "q_att_masks": batch[5],
                 "q_len": batch[6],
                 "q_start": batch[7],
                 "dialog_act": batch[8],
                 "start_positions":batch[9],
                 "end_positions": batch[10],
+                "history_starts": batch[15] if len(batch) >= 16 else None,
+                "history_ends": batch[16] if len(batch) >= 16 else None,
             }
 
             outputs = model(**inputs)
