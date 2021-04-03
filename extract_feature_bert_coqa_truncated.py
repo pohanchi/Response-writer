@@ -564,7 +564,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         for index in range(len(history_span_modify)):
             doc_start = span["start"]
             doc_end = span["start"] + span["length"] - 1
-            doc_offset = 1
+            doc_offset = sequence_added_tokens
             if not history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end:
                 continue
             else:
