@@ -305,12 +305,9 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
     while len(spans) * doc_stride < len(all_doc_tokens):
 
         # Define the side we want to truncate / pad and the text/pair sorting
-        if tokenizer.padding_side == "right":
-            pairs = span_doc_tokens
-            truncation = TruncationStrategy.ONLY_FIRST.value
-        else:
-            pairs = span_doc_tokens
-            truncation = TruncationStrategy.ONLY_FIRST.value
+
+        pairs = span_doc_tokens
+        truncation = TruncationStrategy.ONLY_FIRST.value
         
 
         encoded_dict = tokenizer.encode_plus(
@@ -343,13 +340,13 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
 
         token_to_orig_map = {}
         for i in range(paragraph_len):
-            index = 1 + i
+            index = 1 + i #(different! index = i+sequence_added_tokens)
             token_to_orig_map[index] = tok_to_orig_index[len(spans) * doc_stride + i]
 
         encoded_dict["paragraph_len"] = paragraph_len
         encoded_dict["tokens"] = tokens
         encoded_dict["token_to_orig_map"] = token_to_orig_map
-        encoded_dict["truncated_query_with_special_tokens_length"] = 1
+        encoded_dict["truncated_query_with_special_tokens_length"] = 1 # (different! encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens)
         encoded_dict["token_is_max_context"] = {}
         encoded_dict["start"] = len(spans) * doc_stride
         encoded_dict["length"] = paragraph_len
@@ -381,9 +378,9 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         # Original TF implem also keep the classification token (set to 0)
         p_mask = np.ones_like(span["token_type_ids"])
         if tokenizer.padding_side == "right":
-            p_mask[0 :] = 0
+            p_mask[0 :] = 0  #(different than offficial code (p_mask[sequence_added_tokens :] = 0))
         else:
-            p_mask[-len(span["tokens"]) : -(len(truncated_query) + sequence_added_tokens)] = 0
+            p_mask[-len(span["tokens"]) : sequence_added_tokens] = 0
 
         pad_token_indices = np.where(span["input_ids"] == tokenizer.pad_token_id)
 
@@ -418,7 +415,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
                 if tokenizer.padding_side == "left":
                     doc_offset = 0
                 else:
-                    doc_offset = 1
+                    doc_offset = 1 # different! ( doc_offset = sequence_added_tokens)
 
                 start_position = tok_start_position - doc_start + doc_offset
                 end_position = tok_end_position - doc_start + doc_offset
@@ -428,7 +425,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         for index in range(len(history_span_modify)):
             doc_start = span["start"]
             doc_end = span["start"] + span["length"] - 1
-            doc_offset = 1
+            doc_offset = 1 # differernt! (doc_offset = sequence_added_tokens)
             if not history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end:
                 continue
             else:

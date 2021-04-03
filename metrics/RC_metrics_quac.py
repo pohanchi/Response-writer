@@ -417,13 +417,13 @@ def compute_predictions_logits(
                 orig_doc_end = feature.token_to_orig_map[pred.end_index]
                 orig_tokens = example.doc_tokens[orig_doc_start : (orig_doc_end + 1)]
 
-                # tok_text = tokenizer.convert_tokens_to_string(tok_tokens)
+                tok_text = tokenizer.convert_tokens_to_string(tok_tokens)
 
-                tok_text = " ".join(tok_tokens)
+                # tok_text = " ".join(tok_tokens)
                 
-                # De-tokenize WordPieces that have been split off.
-                tok_text = tok_text.replace(" ##", "")
-                tok_text = tok_text.replace("##", "")
+                # # De-tokenize WordPieces that have been split off.
+                # tok_text = tok_text.replace(" ##", "")
+                # tok_text = tok_text.replace("##", "")
 
                 # Clean whitespace
                 tok_text = tok_text.strip()
