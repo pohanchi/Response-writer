@@ -1,6 +1,0 @@
-domain: "cooking"
-mode: "test"
-is_dev: false
-is_training: false
-ratio: 1
-output_name: ../preprocessing_files/bert/DoQA/test_file_cooking_v2

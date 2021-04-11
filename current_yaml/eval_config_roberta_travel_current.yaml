@@ -1,4 +1,0 @@
-saved_directory: ../../bigdata/CQAModel/v2/currentQ-dev-in_training-roberta
-checkpoint_step: 1000
-eval_file: roberta/current_doqa/doqa_test_file_travel
-exp_name: eval_travel_result_current-roberta

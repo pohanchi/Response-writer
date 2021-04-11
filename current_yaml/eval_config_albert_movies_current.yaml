@@ -1,4 +1,0 @@
-saved_directory: ../../bigdata/CQAModel/currentQ-dev-in_training-albert
-checkpoint_step: 700
-eval_file: albert/current_doqa/doqa_test_file_movies
-exp_name: eval_movies_result_current-albert

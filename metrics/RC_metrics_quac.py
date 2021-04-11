@@ -402,7 +402,7 @@ def compute_predictions_logits(
         prelim_predictions = sorted(prelim_predictions, key=lambda x: (x.start_logit + x.end_logit), reverse=True)
 
         _NbestPrediction = collections.namedtuple(  # pylint: disable=invalid-name
-            "NbestPrediction", ["text", "start_logit", "end_logit"]
+            "NbestPrediction", ["text", "start_logit", "end_logit", "answer_start", "answer_end"]
         )
 
         seen_predictions = {}
@@ -431,6 +431,7 @@ def compute_predictions_logits(
                 orig_text = " ".join(orig_tokens)
 
                 final_text = get_final_text(tok_text, orig_text, do_lower_case, verbose_logging)
+
                 if final_text in seen_predictions:
                     continue
 
@@ -438,22 +439,24 @@ def compute_predictions_logits(
             else:
                 final_text = "CANNOTANSWER"
                 seen_predictions[final_text] = True
+                orig_doc_start = -1
+                orig_doc_end = -1
 
-            nbest.append(_NbestPrediction(text=final_text, start_logit=pred.start_logit, end_logit=pred.end_logit))
+            nbest.append(_NbestPrediction(text=final_text, start_logit=pred.start_logit, end_logit=pred.end_logit, answer_start=orig_doc_start, answer_end=orig_doc_end))
         # if we didn't include the empty option in the n-best, include it
         if version_2_with_negative:
             if "CANNOTANSWER" not in seen_predictions:
-                nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=null_start_logit, end_logit=null_end_logit))
+                nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=null_start_logit, end_logit=null_end_logit, answer_start=-1, answer_end=-1))
 
             # In very rare edge cases we could only have single null prediction.
             # So we just create a nonce prediction in this case to avoid failure.
             if len(nbest) == 1:
-                nbest.insert(0, _NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0))
+                nbest.insert(0, _NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0, answer_start=-1, answer_end=-1))
 
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
-            nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0))
+            nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0, answer_start=-1, answer_end=-1))
 
         assert len(nbest) >= 1, "No valid predictions"
 
@@ -474,13 +477,15 @@ def compute_predictions_logits(
             output["probability"] = probs[i]
             output["start_logit"] = entry.start_logit
             output["end_logit"] = entry.end_logit
+            output['answer_start'] = entry.answer_start
+            output['answer_end'] = entry.answer_end
             nbest_json.append(output)
 
         assert len(nbest_json) >= 1, "No valid predictions"
 
         if not version_2_with_negative:
             official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = (nbest_json[0]["text"], "y", "y")
-            all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": nbest_json[0]["text"], "yesno": "y", "followup":"y"}
+            all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": nbest_json[0]["text"], "yesno": "y", "followup":"y", "answer_start": nbest_json[0]["answer_start"], "answer_end": nbest_json[0]["answer_end"], "question_answer_string": example.question_text}
         else:
             if not best_non_null_entry:
                 score_diff = 10
@@ -489,10 +494,10 @@ def compute_predictions_logits(
             scores_diff_json[example.qas_id] = score_diff
             if score_diff > null_score_diff_threshold:
                 official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = ("CANNOTANSWER", "y", "y")
-                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": "CANNOTANSWER", "yesno": "y", "followup":"y"}
+                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": "CANNOTANSWER", "yesno": "y", "followup":"y", "answer_start": -1,"answer_end":-1, "question_answer_string": example.question_text}
             else:
                 official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = (best_non_null_entry.text, "y", "y")
-                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": best_non_null_entry.text, "yesno": "y", "followup":"y"}
+                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": best_non_null_entry.text, "yesno": "y", "followup":"y",  "answer_start": best_non_null_entry.answer_start, "answer_end":best_non_null_entry.answer_end, "question_answer_string": example.question_text}
 
             all_nbest_json[example.qas_id] = nbest_json
     
@@ -637,6 +642,7 @@ def compute_predictions_log_probs(
             # final_text = paragraph_text[start_orig_pos: end_orig_pos + 1].strip()
 
             # Previously used Bert untokenizer
+            import ipdb; ipdb.set_trace()
             tok_tokens = feature.tokens[pred.start_index : (pred.end_index + 1)]
             orig_doc_start = feature.token_to_orig_map[pred.start_index]
             orig_doc_end = feature.token_to_orig_map[pred.end_index]

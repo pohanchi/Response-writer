@@ -317,6 +317,9 @@ if is_torch_available():
         BertModelMemory16,
         BertModelMemory17,
         BertModelMemory18,
+        BertModelMemory20,
+        BertModelMemory21,
+        BertModelMemory22,
     )
     from .modeling_bert_generation import (
         BertGenerationDecoder,
