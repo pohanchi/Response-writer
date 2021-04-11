@@ -203,7 +203,7 @@ def whitespace_tokenize(text):
     tokens = text.split()
     return tokens
 
-def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy, is_training):
+def convert_example_to_features(example, tokenizer, padding_strategy, is_training, doc_stride=128):
     
     features = []
 
@@ -302,6 +302,7 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
         tokenizer.max_len - tokenizer.max_len_single_sentence
     )
     sequence_pair_added_tokens = tokenizer.max_len - tokenizer.max_len_sentences_pair
+    sequence_added_tokens = 1
 
     span_doc_tokens = all_doc_tokens
     while len(spans) * doc_stride < len(all_doc_tokens):
@@ -321,7 +322,7 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
             return_token_type_ids=True
         )
 
-        paragraph_len = len(all_doc_tokens) - len(spans) * doc_stride
+        paragraph_len = len(all_doc_tokens)
 
         if tokenizer.pad_token_id in encoded_dict["input_ids"]:
             if tokenizer.padding_side == "right":
@@ -423,7 +424,7 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
         for index in range(len(history_span_modify)):
             doc_start = span["start"]
             doc_end = span["start"] + span["length"] - 1
-            doc_offset = 1
+            doc_offset = sequence_added_tokens
             if not history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end:
                 continue
             else:
@@ -580,9 +581,9 @@ def convert_dataset_to_examples(datasets, mode):
         start_position_character = None
         answer_text = None
 
-        is_impossible = True if data['answers']['text'][0] =="CANNOTANSWER" else False
-        answer_text = data['answers']['text'][0] if not is_impossible else "CANNOTANSWER"
-        start_position_character = data["answers"]['answer_start'][0]
+        is_impossible = True if data['orig_answer']['text'][0] =="CANNOTANSWER" else False
+        answer_text = data['orig_answer']['text'][0] if not is_impossible else "CANNOTANSWER"
+        start_position_character = data['orig_answer']['answer_start'][0]
         answers = data["answers"]
 
         num = data['id'].split("#")[-1]
@@ -597,8 +598,8 @@ def convert_dataset_to_examples(datasets, mode):
             for i in range(previous,1,1):
                 history = datasets[mode][index+i]
                 if i !=0:
-                    history_span_list.append([history['answers']['answer_start'][0], None, history['answers']['text'][0]])
-                    question = question + history['question'] + " " + history['answers']['text'][0] + " " +"[SEP]" + " "
+                    history_span_list.append([history['orig_answer']['answer_start'][0], None, history['orig_answer']['text'][0]])
+                    question = question + history['question'] + " " + history['orig_answer']['text'][0] + " " +"[SEP]" + " "
                 else:
                     question = question + history['question'] + " " +"[SEP]"
 
@@ -751,5 +752,5 @@ if __name__ == "__main__":
 
     dataset = load_dataset("doqa", config['domain'],cache_dir="../dataset_local/doqa")
     cached_features_file = config['output_name']
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+    tokenizer = BertTokenizer.from_pretrained(config['model_name'])
     extract_and_save_feature(dataset, config['mode'], tokenizer, config['is_training'], cached_features_file, ratio=config['ratio'], is_dev=config['is_dev'])

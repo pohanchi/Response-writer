@@ -3,15 +3,15 @@ import os
 import logging
 import timeit
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler,SubsetRandomSampler
-from extract_feature import *
-from metrics.RC_metrics import *
+from extract_feature_bert_doqa import *
+from metrics.RC_metrics_quac import *
+from metrics.quac_metrics import *
 from utils import *
-
 import IPython
 import pdb
 
 
-def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
+def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
     
     preprocess= torch.load(eval_file)
     features, dataset, examples = preprocess['features'], preprocess['dataset'], preprocess['examples']
@@ -90,7 +90,7 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
     else:
         output_null_log_odds_file = None
 
-    predictions = compute_predictions_logits(
+    predictions, official_all_predictions = compute_predictions_logits(
         examples,
         features,
         all_results,
@@ -105,7 +105,14 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
         train_args['null_score_diff_threshold'],
         tokenizer,
     )
+    val = json.load(open(eval_json, 'r'))['data']
+    
+    metric_json = eval_fn(val, official_all_predictions, False)
+
+    output_metrics_file = os.path.join(train_args['output_dir'], "metrics.json".format(prefix))
+
+    with open(output_metrics_file, 'w') as fout:
+      json.dump(metric_json, fout)
 
     # Compute the F1 and exact scores.
-    results = RC_evaluate(examples, predictions)
-    return results
+    return metric_json

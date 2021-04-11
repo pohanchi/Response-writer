@@ -18,11 +18,11 @@ fp16: false
 max_grad_norm: 1.0
 logging_steps: 1000
 save_steps: 1000
-output_dir: ../CQAModel/CoQA/Bert_baseline/sep-dev-in_training
+output_dir: ../CQAModel/CoQA/Bert_HistoryModule/sep-dev-in_training
 evaluate_during_training: True
 version_2_with_negative: True
 verbose_logging: True
-max_answer_length: 40
+max_answer_length: 30
 n_best_size: 20
 null_score_diff_threshold: 0.0
 do_lower_case: True
@@ -30,7 +30,7 @@ train_feature_file: ../preprocessing_files/bert/CoQA/train_clean_truncated
 eval_feature_file: ../preprocessing_files/bert/CoQA/dev_clean_truncated
 eval_json: ../dataset_local/coqa/coqa-dev-v1.0.json
 
-model: BERTQA_coqa
+model: BERTQA_memory
 pretrained_name: bert-base-uncased
 pretrained_tokenizer: BertTokenizer
 

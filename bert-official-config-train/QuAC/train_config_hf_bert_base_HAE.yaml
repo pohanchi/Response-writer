@@ -1,9 +1,9 @@
 bottleneck_size: 16
 add_cross_attention: false
-exp_name: DoQAsep_hf_bert_HAE
-epoches: 10
+exp_name: DoQAsep_hf_bert_HAE_seqlen512
+epoches: 5
 weight_decay: 0.0
-learning_rate: 0.00005
+learning_rate: 0.00003
 warmup_steps: 1000
 adam_epsilon: 1.0e-12
 adam_beta1: 0.9
@@ -26,8 +26,8 @@ max_answer_length: 30
 n_best_size: 20
 null_score_diff_threshold: 0.0
 do_lower_case: True
-train_feature_file: ../preprocessing_files/bert/QuAC/base_train_truncated_HAE
-eval_feature_file: ../preprocessing_files/bert/QuAC/base_dev_truncated_HAE
+train_feature_file: ../preprocessing_files/bert/QuAC/testing/base_train_truncated_HAE
+eval_feature_file: ../preprocessing_files/bert/QuAC/testing/base_dev_truncated_HAE
 eval_json: ../dataset_local/quac/val_v0.2.json
 
 model: BERTQA_memory_HAE

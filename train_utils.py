@@ -9,11 +9,11 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Subset
 from utils import set_seed
 from optimizer_utils import *
-from extract_feature import *
+from extract_feature_bert_doqa import *
 from evaluate_utils import *
 
 
-def train(model, cache_train_file, cache_validation_file, train_args, tokenizer, wandb, cache_dev_file=None, **kwargs):
+def train(model, cache_train_file, cache_validation_file, eval_json, train_args, tokenizer, wandb, cache_dev_file=None, **kwargs):
 
     model = model.to(train_args['device'])
     # wandb.watch(model)
@@ -31,7 +31,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
     optimizer_grouped_parameters = [
         {
             "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if not any( nd in n for nd in no_decay)],
-            "weight_decay": 0.0,
+            "weight_decay": 0.01,
         },
         {
             "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if any( nd in n for nd in no_decay)],
@@ -127,13 +127,13 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                     record_train = {}
                     if train_args['local_rank'] == -1 and train_args['evaluate_during_training']:
                         if cache_dev_file is not None:
-                            results_dev = evaluate(train_args, cache_dev_file, model, tokenizer)
+                            results_dev = evaluate(train_args, cache_dev_file, eval_json, model, tokenizer)
                             for key, value in results_dev.items():
                                 record_train["train_{}".format(key)] = value
                             wandb.log(record_train, step=global_step)
                             print("training_F1_EM result: ",record_train)
 
-                        results = evaluate(train_args, cache_validation_file, model, tokenizer)
+                        results = evaluate(train_args, cache_validation_file, eval_json, model, tokenizer)
                         for key, value in results.items():
                             record["eval_{}".format(key)] = value
                     record["lr"]=scheduler.get_last_lr()[0]

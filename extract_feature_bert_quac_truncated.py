@@ -251,7 +251,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         (tok_history_start_position, tok_history_end_position) = _improve_answer_span(
             all_doc_tokens, history_start_position, history_end_position, tokenizer, item[2]
         )
-        history_span_modify.append((tok_history_start_position, tok_history_end_position))        
+        history_span_modify.append([tok_history_start_position, tok_history_end_position])        
 
 
 
@@ -300,7 +300,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         tokenizer.max_len - tokenizer.max_len_single_sentence
     )
     sequence_pair_added_tokens = tokenizer.max_len - tokenizer.max_len_sentences_pair
-
+    sequence_added_tokens_cls = 1
     span_doc_tokens = all_doc_tokens
     while len(spans) * doc_stride < len(all_doc_tokens):
 
@@ -315,13 +315,13 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
             truncation=truncation,
             max_length=max_seq_length,
             return_overflowing_tokens=True,
-            stride=max_seq_length - doc_stride - sequence_pair_added_tokens,
+            stride=max_seq_length - doc_stride - sequence_added_tokens,
             return_token_type_ids=True,
         )
 
         paragraph_len = min(
             len(all_doc_tokens) - len(spans) * doc_stride,
-            max_seq_length - sequence_pair_added_tokens, 
+            max_seq_length - sequence_added_tokens, 
             )
 
         if tokenizer.pad_token_id in encoded_dict["input_ids"]:
@@ -340,13 +340,13 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
 
         token_to_orig_map = {}
         for i in range(paragraph_len):
-            index = i+sequence_added_tokens #(different! index = i+sequence_added_tokens)
+            index = i+sequence_added_tokens_cls #(different! index = i+sequence_added_tokens)
             token_to_orig_map[index] = tok_to_orig_index[len(spans) * doc_stride + i]
 
         encoded_dict["paragraph_len"] = paragraph_len
         encoded_dict["tokens"] = tokens
         encoded_dict["token_to_orig_map"] = token_to_orig_map
-        encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens # (different! encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens)
+        encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens_cls # (different! encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens)
         encoded_dict["token_is_max_context"] = {}
         encoded_dict["start"] = len(spans) * doc_stride
         encoded_dict["length"] = paragraph_len
@@ -378,9 +378,9 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         # Original TF implem also keep the classification token (set to 0)
         p_mask = np.ones_like(span["token_type_ids"])
         if tokenizer.padding_side == "right":
-            p_mask[sequence_added_tokens :] = 0  #(different than offficial code (p_mask[sequence_added_tokens :] = 0))
+            p_mask[sequence_added_tokens_cls :] = 0  #(different than offficial code (p_mask[sequence_added_tokens :] = 0))
         else:
-            p_mask[-len(span["tokens"]) : sequence_added_tokens] = 0
+            p_mask[-len(span["tokens"]) : sequence_added_tokens_cls] = 0
 
         pad_token_indices = np.where(span["input_ids"] == tokenizer.pad_token_id)
 
@@ -415,7 +415,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
                 if tokenizer.padding_side == "left":
                     doc_offset = 0
                 else:
-                    doc_offset = sequence_added_tokens # different! ( doc_offset = sequence_added_tokens)
+                    doc_offset = sequence_added_tokens_cls # different! ( doc_offset = sequence_added_tokens)
 
                 start_position = tok_start_position - doc_start + doc_offset
                 end_position = tok_end_position - doc_start + doc_offset
@@ -425,10 +425,10 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         for index in range(len(history_span_modify)):
             doc_start = span["start"]
             doc_end = span["start"] + span["length"] - 1
-            doc_offset = sequence_added_tokens # differernt! (doc_offset = sequence_added_tokens)
-            if not history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end:
-                continue
-            else:
+            doc_offset = sequence_added_tokens_cls # differernt! (doc_offset = sequence_added_tokens_cls)
+            if (history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end):
+                # history_span_modify[index][0] = max(history_span_modify[index][0], doc_start)
+                # history_span_modify[index][1] = min(history_span_modify[index][1], doc_end)
                 start_history_position = history_span_modify[index][0] - doc_start + doc_offset
                 end_history_position = history_span_modify[index][1] - doc_start + doc_offset
                 history_in_context.append((start_history_position, end_history_position))
@@ -573,7 +573,7 @@ class RCExample:
                 min(start_position_character + len(answer_text) - 1, len(char_to_word_offset) - 1)
             ]
 
-def convert_dataset_to_examples(datasets, mode):
+def convert_dataset_to_examples(datasets, mode, history_turn=-1):
     
     examples = []
     
@@ -586,7 +586,7 @@ def convert_dataset_to_examples(datasets, mode):
         answer_text_criterion = data['orig_answer']['text']
         is_impossible = True if answer_text_criterion == 'CANNOTANSWER' else False
 
-        answer = data['answers'][0]
+        answer = data['orig_answer']
         answer_text = answer['text']
         start_position_character = answer['answer_start']
         answers = data["answers"]
@@ -602,9 +602,14 @@ def convert_dataset_to_examples(datasets, mode):
             for i in range(previous,1,1):
                 history = datasets[mode][index+i]
                 if i !=0:
-                    history_span_list.append([history['answers'][0]['answer_start'], None, history['answers'][0]['text']])
+                    if history_turn >0:
+                        if i >= -history_turn:
+                            history_span_list.append([history['orig_answer']['answer_start'], None, history['orig_answer']['text']])
+                            question = question + history['question'] + " " + history['orig_answer']['text'] + " " +"[SEP]" + " "
+                    else:
+                        history_span_list.append([history['orig_answer']['answer_start'], None, history['orig_answer']['text']])
+                        question = question + history['question'] + " " + history['orig_answer']['text'] + " " +"[SEP]" + " "
 
-                    question = question + history['question'] + " " + history['orig_answer']['text'] + " " +"[SEP]" + " "
                 else:
                     question = question + history['question'] + " " +"[SEP]"
             
@@ -748,10 +753,10 @@ if __name__ == '__main__':
 
     dataset_dict[config['mode']] = dataset_raw
 
-    examples = convert_dataset_to_examples(dataset_dict,config['mode'])
+    examples = convert_dataset_to_examples(dataset_dict,config['mode'], history_turn=config['history_turn'])
 
     if "examples" in list(config.keys()):
-        examples = examples[:100]
+        examples = examples[:500]
 
     if config['mode'] == "train":
         train_sample = int(config['ratio'] * len(examples))
