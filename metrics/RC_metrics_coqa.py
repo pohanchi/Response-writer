@@ -415,6 +415,7 @@ def compute_predictions_logits(
     all_predictions = []
     all_nbest_json = collections.OrderedDict()
     scores_diff_json = collections.OrderedDict()
+    extra_predictions = collections.defaultdict(dict)
 
 
 
@@ -487,7 +488,7 @@ def compute_predictions_logits(
         prelim_predictions = sorted(prelim_predictions, key=lambda x: (x.start_logit + x.end_logit), reverse=True)
 
         _NbestPrediction = collections.namedtuple(  # pylint: disable=invalid-name
-            "NbestPrediction", ["text", "start_logit", "end_logit"]
+            "NbestPrediction", ["text", "start_logit", "end_logit", "answer_start", "answer_end"]
         )
 
         seen_predictions = {}
@@ -529,8 +530,10 @@ def compute_predictions_logits(
                 else:
                     final_text = 'No'.lower()
                 seen_predictions[final_text] = True
+                orig_doc_start = -1
+                orig_doc_end = -1
 
-            nbest.append(_NbestPrediction(text=final_text, start_logit=pred.start_logit, end_logit=pred.end_logit))
+            nbest.append(_NbestPrediction(text=final_text, start_logit=pred.start_logit, end_logit=pred.end_logit, answer_start=orig_doc_start, answer_end=orig_doc_end))
         # if we didn't include the empty option in the n-best, include it
         
         if "Unknown" not in seen_predictions and 'Yes' not in seen_predictions and 'No' not in seen_predictions:
@@ -545,17 +548,17 @@ def compute_predictions_logits(
             nbest.append(
                 _NbestPrediction(
                     text=final_text, start_logit=null_start_logit,
-                    end_logit=null_end_logit))
+                    end_logit=null_end_logit, answer_start=orig_doc_start, answer_end=orig_doc_end))
 
         # In very rare edge cases we could only have single null prediction.
         # So we just create a nonce prediction in this case to avoid failure.
         if len(nbest) == 1:
-            nbest.insert(0, _NbestPrediction(text="Unknown", start_logit=0.0, end_logit=0.0))
+            nbest.insert(0, _NbestPrediction(text="Unknown", start_logit=0.0, end_logit=0.0, answer_start=orig_doc_start, answer_end=orig_doc_end))
 
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
-            nbest.append(_NbestPrediction(text="Unknown", start_logit=0.0, end_logit=0.0))
+            nbest.append(_NbestPrediction(text="Unknown", start_logit=0.0, end_logit=0.0,answer_start=orig_doc_start, answer_end=orig_doc_end))
 
         assert len(nbest) >= 1, "No valid predictions"
 
@@ -578,63 +581,57 @@ def compute_predictions_logits(
             output["probability"] = probs[i]
             output["start_logit"] = entry.start_logit
             output["end_logit"] = entry.end_logit
+            output['answer_start'] = entry.answer_start
+            output['answer_end'] = entry.answer_end
             nbest_json.append(output)
 
         assert len(nbest_json) >= 1, "No valid predictions"
 
         if not best_non_null_entry:
-
-            postprocessing_id_items=example.qas_id.split("_")
-            
-            all_predictions.append({
-                    "id":postprocessing_id_items[0],
-                    "turn_id":int(postprocessing_id_items[1][2:])+1,
-                    "answer": nbest_json[0]['text']
-                })
-            
-            # all_predictions[example.qas_id] = nbest_json[0]["text"]
+            score_diff = 10            
         else:
             # predict "" iff the null score - the score of best non-null > threshold
             score_diff = score_null - best_non_null_entry.start_logit - (
                 best_non_null_entry.end_logit)
             scores_diff_json[example.qas_id] = score_diff
 
-            if score_diff > null_score_diff_threshold:
-                choice = np.argmax(null_class_logit)
-                if choice == 0:
-                    final_text = 'Unknown'
-                elif choice == 1:
-                    final_text = 'Yes'
-                else:
-                    final_text = 'No' 
-                
-                postprocessing_id_items=example.qas_id.split("_")
-                
-                all_predictions.append({
-                        "id":postprocessing_id_items[0],
-                        "turn_id":int(postprocessing_id_items[1][2:])+1,
-                        "answer": final_text,
-                    })            
-                # all_predictions[example.qas_id] = final_text
-            
+        if score_diff > null_score_diff_threshold:
+            choice = np.argmax(null_class_logit)
+            if choice == 0:
+                final_text = 'Unknown'
+            elif choice == 1:
+                final_text = 'Yes'
             else:
+                final_text = 'No' 
+            
+            postprocessing_id_items=example.qas_id.split("_")
+            
+            all_predictions.append({
+                    "id":postprocessing_id_items[0],
+                    "turn_id":int(postprocessing_id_items[1][2:])+1,
+                    "answer": final_text,
+                }) 
+            extra_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": final_text, "yesno": "y", "followup":"y", "answer_start": -1, "answer_end": -1, "question_answer_string": example.question_text}           
+        
+        else:
 
-                postprocessing_id_items=example.qas_id.split("_")
+            postprocessing_id_items=example.qas_id.split("_")
 
-                all_predictions.append({
-                        "id":postprocessing_id_items[0],
-                        "turn_id":int(postprocessing_id_items[1][2:])+1,
-                        "answer": best_non_null_entry.text,
-                    }) 
-                # all_predictions[example.qas_id] = best_non_null_entry.text
-            all_nbest_json[example.qas_id] = nbest_json
+            all_predictions.append({
+                    "id":postprocessing_id_items[0],
+                    "turn_id":int(postprocessing_id_items[1][2:])+1,
+                    "answer": best_non_null_entry.text,
+                }) 
+            extra_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": best_non_null_entry.text, "yesno": "y", "followup":"y", "answer_start": best_non_null_entry.answer_start, "answer_end": best_non_null_entry.answer_end, "question_answer_string": example.question_text} 
+            # all_predictions[example.qas_id] = best_non_null_entry.text
+        all_nbest_json[example.qas_id] = nbest_json
 
     if output_prediction_file:
         with open(output_prediction_file, "w") as writer:
             writer.write(json.dumps(all_predictions, indent=4) + "\n")
 
 
-    return all_predictions
+    return all_predictions, extra_predictions
 
 
 def all_predictions_to_dict(all_predictions):
