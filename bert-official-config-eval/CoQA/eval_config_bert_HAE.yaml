@@ -1,4 +1,0 @@
-saved_directory: ../CQAModel/CoQA/Bert_HAE/
-eval_file: ../preprocessing_files/bert/CoQA/clean_base_dev_file_HAE
-eval_json: ../dataset_local/coqa/coqa-dev-v1.0.json
-exp_name: eval_hf_bert_cooking_HAE
