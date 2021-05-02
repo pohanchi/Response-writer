@@ -1,0 +1,11 @@
+mode: dev
+ratio: 1.0
+is_dev: false
+stride: 128
+max_seq_length: 512
+is_training: false
+json_file: ../dataset_local/coqa/coqa-dev-v1.0.json
+cache_features_file: ../preprocessing_files/bert/CoQA/diff_decode/clean_base_dev_file_HAE
+pretrained_tokenizer: BertTokenizer
+model_name: bert-base-uncased
+history_turn: -1
