@@ -6,10 +6,10 @@ import wandb
 import transformers
 from module import BERTQA_memory, BERTQA, BARTQA, BERTQA_memory3, BERTQA_memory4, BERTQA_memory5, \
     BERTQA_memory6, BERTQA_memory10, BERTQA_memory11, BERTQA_memory12, BERTQA_memory115, BERTQA_memory13, \
-    BERTQA_memoryHistory, BERTQA_memory14, BERTQA_memory15, BERTQA_memory16, BERTQA_memory17, BERTQA_memory_HAE
+    BERTQA_memoryHistory, BERTQA_memory14, BERTQA_memory15, BERTQA_memory16, BERTQA_memory17, BERTQA_memory_HAE, BERTQA_memory22, BERTQA_memory23
 from transformers import BertTokenizer
 from train_utils_quac import train
-from extract_feature_quac import *
+from extract_feature_bert_quac_truncated import *
 from utils import *
 
 

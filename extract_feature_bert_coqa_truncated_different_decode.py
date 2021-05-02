@@ -27,6 +27,7 @@ from collections import Counter
 import spacy
 import unicodedata
 import argparse
+import collections
 import torch
 import yaml
 from torch.utils.data import TensorDataset
@@ -682,8 +683,8 @@ class RCExample:
         for i in range(len(self.history_origin)):
             if self.history_origin[i][0] == -1:
                 continue
-            start_position_history = char_to_word_offset[self.history_origin[i][0]]
-            end_position_history = char_to_word_offset[min(self.history_origin[i][1], len(char_to_word_offset)-1)]
+            start_position_history = self.history_origin[i][0]
+            end_position_history = self.history_origin[i][1]
             self.history_span_list.append([start_position_history, end_position_history, self.history_origin[i][2]])
         # Start and end positions only has a value during evaluation.
         if start_position_character is not None and end_position_character is not None and not is_impossible:
@@ -716,9 +717,9 @@ def convert_dataset_to_examples(datasets, mode, history_turn=-1):
             is_impossible = False
             answer = data['answers'][0]
             answer_text = answer['text']
-        start_position_character = answer['answer_start']
-        end_position_character = answer['answer_end']
-        answers = data["answers"]
+            start_position_character = answer['answer_start']
+            end_position_character = answer['answer_end']
+            answers = data["answers"]
 
         num = data['id'].split("#")[-1]
 
@@ -742,6 +743,66 @@ def convert_dataset_to_examples(datasets, mode, history_turn=-1):
         else:
             question  = question + data['question'] + " [SEP]"
 
+        dialog_act = data['dialog_act']
+
+        example = RCExample(qas_id=data['id'],
+                            question_text=question,
+                            context_text=data["context"],
+                            dialog_act=dialog_act,
+                            answer_text=answer_text,
+                            start_position_character=start_position_character, 
+                            end_position_character=end_position_character,
+                            is_impossible=is_impossible,
+                            answers=answers,
+                            history_span_list=history_span_list)
+    
+        examples.append(example)
+
+    return examples
+
+def convert_datalist_to_examples(dataset, history_dict=None):
+    
+    examples = []
+    
+    for index in trange(len(dataset)):
+        data = dataset[index]
+
+        start_position_character = None
+        answer_text = None
+        answers = []
+
+        if data["is_impossible"] == True and not data['answers'][0]['text'].lower() == "yes" and not data['answers'][0]['text'].lower() == "no":
+            is_impossible = True
+            answer = data['answers'][0]
+            answer_text = answer['text'] 
+        
+        elif data['answers'][0]['text'].lower() == "yes" or data['answers'][0]['text'].lower() == "no":
+            is_impossible = True
+            answer = data['answers'][0]
+            answer_text = answer['text']
+        else:
+            is_impossible = False
+            answer = data['answers'][0]
+            answer_text = answer['text']
+        start_position_character = answer['answer_start']
+        end_position_character = answer['answer_end']
+        answers = data["answers"]
+
+        num = data['id'].split("#")[-1]
+        doc_id = data['id'].split("_q#")[0]
+        history_span_list = []
+        
+        question = "[CLS] "
+        last_id = 0
+        if eval(num) != 0:
+            previous = eval(num)
+            for prev_idx in range(previous):
+                if history_dict.get(doc_id+"_q#"+str(prev_idx), None):
+                    last_id = prev_idx
+                    history_span_list.append([history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_start'], history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_end'], history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['text']])
+            question = history_dict[doc_id+"_q#"+str(last_id)]['question'][:-5] + history_dict[doc_id+"_q#"+str(last_id)]['prediction']['text'] + " " +"[SEP]" + " "
+
+        question  = question + data['question'] + " [SEP]"
         dialog_act = data['dialog_act']
 
         example = RCExample(qas_id=data['id'],
@@ -940,19 +1001,17 @@ if __name__ == '__main__':
             dataset_dict[mode] = dataset_raw
             pickle.dump(dataset_dict, open(f"../dataset_local/coqa/dump_complete_{mode}.p","wb"))
 
-    examples = convert_dataset_to_examples(dataset_dict,mode, history_turn=config['history_turn'])
+# -----------------------------------------------------------------------#
 
-    if mode == "train":
-        train_sample = int(ratio * len(examples))
-        if not is_dev:
-            examples = examples[:train_sample]
-        else:
-            examples = examples[train_sample:]
-
-    features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, seq_length=max_seq_length, doc_stride=stride,  is_training=is_training, threads=8)
-
+    examples=[None]
+    turn = 0
+    example_dict = collections.defaultdict(list)
+    for index in range(len(dataset_dict[config['mode']])):
+        data = dataset_dict[config['mode']][index]
+        turn_id=data['id'].split("_q#")[-1]
+        example_dict[f'turn_{turn_id}'].append(data)
+    # features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, doc_stride=stride,  is_training=is_training)
     torch.save(
-    {"features": features, "dataset": dataset, "examples": examples},
-    cached_features_file,
+    {"example_dict": example_dict},
+    config['cache_features_file'],
     )
-

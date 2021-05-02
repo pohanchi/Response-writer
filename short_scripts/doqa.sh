@@ -25,9 +25,9 @@
 # CUDA_VISIBLE_DEVICES=0 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_hisbert_base_travel.yaml
 
 # original
-CUDA_VISIBLE_DEVICES=1 python main_bert_doqa.py --config bert-official-config-train/DoQA/train_config_original_bert_base.yaml
+CUDA_VISIBLE_DEVICES=0 python main_bert_doqa.py --config bert-official-config-train/DoQA/train_config_original_bert_base.yaml
 
 # testing
-CUDA_VISIBLE_DEVICES=1 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_baseline_bert_base_cooking.yaml
-CUDA_VISIBLE_DEVICES=1 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_baseline_bert_base_movies.yaml
-CUDA_VISIBLE_DEVICES=1 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_baseline_bert_base_travel.yaml
+CUDA_VISIBLE_DEVICES=0 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_baseline_bert_base_cooking.yaml
+CUDA_VISIBLE_DEVICES=0 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_baseline_bert_base_movies.yaml
+CUDA_VISIBLE_DEVICES=0 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_baseline_bert_base_travel.yaml

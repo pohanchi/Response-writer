@@ -38,7 +38,7 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
     all_results = []
     start_time = timeit.default_timer()
 
-    for batch in tqdm(eval_dataloader, desc="Evaluating"):
+    for batch in tqdm(eval_dataloader, desc="Evaluating", dynamic_ncols=True):
         model.eval()
         batch = tuple(t.to(train_args['device']) for t in batch)
 

@@ -1,20 +1,20 @@
 import numpy as np
 import IPython, pdb
 import functools
+import tqdm
 import wandb
 import json
 import copy
-from copy import deepcopy
+import argparse
+import yaml
 from datasets import load_dataset, list_datasets, load_metric, Dataset
-from transformers import BertModel, BertConfig, BertTokenizer
+from transformers import BertTokenizer
 from torch import nn
 from itertools import chain
 import random
 import re
+import collections
 import time
-import string
-import os
-import pickle
 import torch_optimizer as optim
 import torch.nn.functional as F
 from utils import logging
@@ -23,133 +23,11 @@ from multiprocessing import Pool, cpu_count
 from functools import partial
 from torch.nn.utils.rnn import pad_sequence 
 from tqdm import trange
-from collections import Counter
-import spacy
-import unicodedata
-import argparse
-import torch
-import yaml
-from torch.utils.data import TensorDataset
-from tqdm import tqdm
-
-
 logger = logging
 
-def normalize_text(text):
-    return unicodedata.normalize('NFD', text)
-
-def get_context_span(context, context_token):
-    p_str = 0
-    p_token = 0
-    t_span = []
-    while p_str < len(context):
-        if re.match('\s', context[p_str]):
-            p_str += 1
-            continue
-
-        token = context_token[p_token]
-        token_len = len(token)
-        if context[p_str:p_str + token_len] != token:
-            log.info("Something wrong with get_context_span()")
-            return []
-        t_span.append((p_str, p_str + token_len))
-
-        p_str += token_len
-        p_token += 1
-    return t_span
-
-def space_extend(matchobj):
-    return ' ' + matchobj.group(0) + ' '
-
-def pre_proc(text):
-    # make hyphens, spaces clean
-    text = re.sub(u'-|\u2010|\u2011|\u2012|\u2013|\u2014|\u2015|%|\[|\]|:|\(|\)|/', space_extend, text)
-    text = text.strip(' \n')
-    text = re.sub('\s+', ' ', text)
-    return text
-
-def normalize_answer(s):
-    """Lower text and remove punctuation, articles and extra whitespace."""
-
-    def remove_articles(text):
-        regex = re.compile(r"\b(a|an|the)\b", re.UNICODE)
-        return re.sub(regex, " ", text)
-
-    def white_space_fix(text):
-        return " ".join(text.split())
-
-    def remove_punc(text):
-        exclude = set(string.punctuation)
-        return "".join(ch for ch in text if ch not in exclude)
-
-    def lower(text):
-        return text.lower()
-
-    return white_space_fix(remove_articles(remove_punc(lower(s))))
-
-def len_preserved_normalize_answer(s):
-    """Lower text and remove punctuation, articles and extra whitespace."""
-
-    def len_preserved_space(matchobj):
-        return ' ' * len(matchobj.group(0))
-
-    def remove_articles(text):
-        return re.sub(r'\b(a|an|the)\b', len_preserved_space, text)
-
-    def remove_punc(text):
-        exclude = set(string.punctuation)
-        return ''.join(ch if ch not in exclude else " " for ch in text)
-
-    def lower(text):
-        return text.lower()
-
-    return remove_articles(remove_punc(lower(s)))
-
-def split_with_span(s):
-    if s.split() == []:
-        return [], []
-    else:
-        return zip(*[(m.group(0), (m.start(), m.end()-1)) for m in re.finditer(r'\S+', s)])
-
-def free_text_to_span(free_text, full_text):
-    if free_text == "unknown":
-        return "unknown", -1, -1
-    if normalize_answer(free_text) == "yes":
-        return "yes", -1, -1
-    if normalize_answer(free_text) == "no":
-        return "no", -1, -1
-
-    free_ls = len_preserved_normalize_answer(free_text).split()
-    full_ls, full_span = split_with_span(len_preserved_normalize_answer(full_text))
-    if full_ls == []:
-        return full_text, 0, len(full_text)
-
-    max_f1, best_index = 0.0, (0, len(full_ls)-1)
-    free_cnt = Counter(free_ls)
-    for i in range(len(full_ls)):
-        full_cnt = Counter()
-        for j in range(len(full_ls)):
-            if i+j >= len(full_ls): break
-            full_cnt[full_ls[i+j]] += 1
-
-            common = free_cnt & full_cnt
-            num_same = sum(common.values())
-            if num_same == 0: continue
-
-            precision = 1.0 * num_same / (j + 1)
-            recall = 1.0 * num_same / len(free_ls)
-            f1 = (2 * precision * recall) / (precision + recall)
-
-            if max_f1 < f1:
-                max_f1 = f1
-                best_index = (i, j)
-
-    assert(best_index is not None)
-    (best_i, best_j) = best_index
-    char_i, char_j = full_span[best_i][0], full_span[best_i+best_j][1]+1
-
-    return full_text[char_i:char_j], char_i, char_j
-
+import torch
+from torch.utils.data import TensorDataset
+from tqdm import tqdm
 
 
 class ExplicitEnum(Enum):
@@ -183,7 +61,7 @@ def convert_example_to_features_init(tokenizer_for_convert):
 def convert_examples_to_features(
     examples,
     tokenizer,
-    seq_length,
+    max_seq_length,
     doc_stride,
     is_training,
     padding_strategy="False",
@@ -228,7 +106,7 @@ def convert_examples_to_features(
         annotate_ = partial(
             convert_example_to_features,
             tokenizer=tokenizer,
-            max_seq_length=seq_length,
+            max_seq_length=max_seq_length,
             doc_stride=doc_stride,
             padding_strategy=padding_strategy,
             is_training=is_training,
@@ -261,6 +139,10 @@ def convert_examples_to_features(
     features = new_features
     del new_features
     if return_dataset == "pt":
+        # if not is_torch_available():
+        #     raise RuntimeError("PyTorch must be installed to return a PyTorch dataset.")
+
+        # Convert to Tensors and build dataset
         all_input_ids = pad_sequence([torch.tensor(f.input_ids, dtype=torch.long) for f in features], batch_first=True)
         all_context_len = torch.tensor([len(f.input_ids) for f in features],dtype=torch.long)
         all_attention_masks = pad_sequence([torch.tensor(f.attention_mask, dtype=torch.long) for f in features],batch_first=True)
@@ -276,13 +158,11 @@ def convert_examples_to_features(
         all_history_start = pad_sequence([torch.tensor(f.history_start_list, dtype=torch.long) for f in features], batch_first=True)
         all_history_end = pad_sequence([torch.tensor(f.history_end_list, dtype=torch.long) for f in features], batch_first=True)
 
+
         if not is_training:
             all_feature_index = torch.arange(all_input_ids.size(0), dtype=torch.long)
             dataset = TensorDataset(
-                all_input_ids, all_attention_masks, all_context_len, all_question_ids, \
-                all_question_seg, all_question_attention_masks, all_question_len, all_question_start, all_dialog_act,\
-                all_cls_index, all_p_mask, all_feature_index, \
-                all_history_start, all_history_end,
+                all_input_ids, all_attention_masks, all_context_len, all_question_ids, all_question_seg, all_question_attention_masks,all_question_len,all_question_start,all_dialog_act,  all_feature_index, all_cls_index, all_p_mask, all_history_start, all_history_end,
             )
         else:
 
@@ -303,7 +183,7 @@ def convert_examples_to_features(
                 all_cls_index,
                 all_p_mask,
                 all_is_impossible,
-                all_history_start,
+                all_history_start, 
                 all_history_end,
             )
 
@@ -357,6 +237,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
 
     spans = []
 
+
     history_span_modify = []
     # handle history answer embedding
     for item in example.history_span_list:
@@ -372,6 +253,9 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
             all_doc_tokens, history_start_position, history_end_position, tokenizer, item[2]
         )
         history_span_modify.append([tok_history_start_position, tok_history_end_position])        
+
+
+
 
 
     truncated_query = tokenizer.encode(
@@ -422,20 +306,18 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
     while len(spans) * doc_stride < len(all_doc_tokens):
 
         # Define the side we want to truncate / pad and the text/pair sorting
-        if tokenizer.padding_side == "right":
-            pairs = span_doc_tokens
-            truncation = TruncationStrategy.ONLY_FIRST.value
-        else:
-            pairs = span_doc_tokens
-            truncation = TruncationStrategy.ONLY_FIRST.value
+
+        pairs = span_doc_tokens
+        truncation = TruncationStrategy.ONLY_FIRST.value
         
 
         encoded_dict = tokenizer.encode_plus(
             pairs,
             truncation=truncation,
-            return_token_type_ids=True,
+            max_length=max_seq_length,
             return_overflowing_tokens=True,
             stride=max_seq_length - doc_stride - sequence_added_tokens,
+            return_token_type_ids=True,
         )
 
         paragraph_len = min(
@@ -459,7 +341,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
 
         token_to_orig_map = {}
         for i in range(paragraph_len):
-            index = i + sequence_added_tokens_cls #(different! index = i+sequence_added_tokens)
+            index = i+sequence_added_tokens_cls #(different! index = i+sequence_added_tokens)
             token_to_orig_map[index] = tok_to_orig_index[len(spans) * doc_stride + i]
 
         encoded_dict["paragraph_len"] = paragraph_len
@@ -477,8 +359,6 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         ):
             break
         span_doc_tokens = encoded_dict["overflowing_tokens"]
-
-
 
     for doc_span_index in range(len(spans)):
         for j in range(spans[doc_span_index]["paragraph_len"]):
@@ -501,7 +381,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         if tokenizer.padding_side == "right":
             p_mask[sequence_added_tokens_cls :] = 0  #(different than offficial code (p_mask[sequence_added_tokens :] = 0))
         else:
-            p_mask[-len(span["tokens"]) : -(len(truncated_query) + sequence_added_tokens)] = 0
+            p_mask[-len(span["tokens"]) : sequence_added_tokens_cls] = 0
 
         pad_token_indices = np.where(span["input_ids"] == tokenizer.pad_token_id)
 
@@ -540,20 +420,20 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
 
                 start_position = tok_start_position - doc_start + doc_offset
                 end_position = tok_end_position - doc_start + doc_offset
-        
+
         history_in_context =[]
 
         for index in range(len(history_span_modify)):
             doc_start = span["start"]
             doc_end = span["start"] + span["length"] - 1
-            doc_offset = sequence_added_tokens_cls
-            if (history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end):                
-                history_span_modify[index][0] = history_span_modify[index][0]
-                history_span_modify[index][1] = history_span_modify[index][1]
+            doc_offset = sequence_added_tokens_cls # differernt! (doc_offset = sequence_added_tokens_cls)
+            if (history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end):
+                # history_span_modify[index][0] = max(history_span_modify[index][0], doc_start)
+                # history_span_modify[index][1] = min(history_span_modify[index][1], doc_end)
                 start_history_position = history_span_modify[index][0] - doc_start + doc_offset
                 end_history_position = history_span_modify[index][1] - doc_start + doc_offset
                 history_in_context.append((start_history_position, end_history_position))
-        
+
         features.append(
             RCFeatures(
                 span["input_ids"],
@@ -577,6 +457,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
                 is_impossible=span_is_impossible,
                 qas_id=example.qas_id,
                 history_span_list=history_in_context,
+
             )
         )
     return features
@@ -643,7 +524,6 @@ class RCExample:
         dialog_act,
         answer_text,
         start_position_character,
-        end_position_character,
         answers=[],
         is_impossible=False,
         history_span_list=[],
@@ -656,7 +536,7 @@ class RCExample:
         self.dialog_act = dialog_act
         self.answers = answers
         self.history_origin = history_span_list
-        # history_span_list = [ (answer_start, answer_end, ans_text) ]
+
 
         self.start_position, self.end_position = 0, 0
 
@@ -680,15 +560,19 @@ class RCExample:
         self.char_to_word_offset = char_to_word_offset
         self.history_span_list = []
         for i in range(len(self.history_origin)):
-            if self.history_origin[i][0] == -1:
-                continue
-            start_position_history = char_to_word_offset[self.history_origin[i][0]]
-            end_position_history = char_to_word_offset[min(self.history_origin[i][1], len(char_to_word_offset)-1)]
+            if self.history_origin[i][2] == "CANNOTANSWER":
+                start_position_history = -1
+                end_position_history = -1
+            else:
+                start_position_history = self.history_origin[i][0]
+                end_position_history = self.history_origin[i][1]
             self.history_span_list.append([start_position_history, end_position_history, self.history_origin[i][2]])
         # Start and end positions only has a value during evaluation.
-        if start_position_character is not None and end_position_character is not None and not is_impossible:
+        if start_position_character is not None and not is_impossible:
             self.start_position = char_to_word_offset[start_position_character]
-            self.end_position = char_to_word_offset[min(end_position_character, len(char_to_word_offset)-1)]
+            self.end_position = char_to_word_offset[
+                min(start_position_character + len(answer_text) - 1, len(char_to_word_offset) - 1)
+            ]
 
 def convert_dataset_to_examples(datasets, mode, history_turn=-1):
     
@@ -700,27 +584,17 @@ def convert_dataset_to_examples(datasets, mode, history_turn=-1):
         start_position_character = None
         answer_text = None
         answers = []
-        history_span_list = []
+        answer_text_criterion = data['orig_answer']['text']
+        is_impossible = True if answer_text_criterion == 'CANNOTANSWER' else False
 
-        if data["is_impossible"] == True and not data['answers'][0]['text'].lower() == "yes" and not data['answers'][0]['text'].lower() == "no":
-            is_impossible = True
-            answer = data['answers'][0]
-            answer_text = answer['text'] 
-        
-        elif data['answers'][0]['text'].lower() == "yes" or data['answers'][0]['text'].lower() == "no":
-            is_impossible = True
-            answer = data['answers'][0]
-            answer_text = answer['text']
-            answers = data['answers']
-        else:
-            is_impossible = False
-            answer = data['answers'][0]
-            answer_text = answer['text']
+        answer = data['orig_answer']
+        answer_text = answer['text']
         start_position_character = answer['answer_start']
-        end_position_character = answer['answer_end']
         answers = data["answers"]
 
         num = data['id'].split("#")[-1]
+
+        history_span_list = []
 
         question = "[CLS] "
         if eval(num) != 0:
@@ -731,18 +605,20 @@ def convert_dataset_to_examples(datasets, mode, history_turn=-1):
                 if i !=0:
                     if history_turn >0:
                         if i >= -history_turn:
-                            history_span_list.append([history['answers'][0]['answer_start'], history['answers'][0]['answer_end'], history['answers'][0]['text']])
-                            question = question + history['question'] + " " + history['answers'][0]['gold_ans'] + " " +"[SEP]" + " "
+                            history_span_list.append([history['orig_answer']['answer_start'], None, history['orig_answer']['text']])
+                            question = question + history['question'] + " " + history['orig_answer']['text'] + " " +"[SEP]" + " "
                     else:
-                        history_span_list.append([history['answers'][0]['answer_start'], history['answers'][0]['answer_end'], history['answers'][0]['text']])
-                        question = question + history['question'] + " " + history['answers'][0]['gold_ans'] + " " +"[SEP]" + " "
+                        history_span_list.append([history['orig_answer']['answer_start'], None, history['orig_answer']['text']])
+                        question = question + history['question'] + " " + history['orig_answer']['text'] + " " +"[SEP]" + " "
+
                 else:
                     question = question + history['question'] + " " +"[SEP]"
             
+
+            dialog_act = 1 if datasets[mode][index-1]['followup'] == 'y' else 0
         else:
             question  = question + data['question'] + " [SEP]"
-
-        dialog_act = data['dialog_act']
+            dialog_act = 1
 
         example = RCExample(qas_id=data['id'],
                             question_text=question,
@@ -750,14 +626,66 @@ def convert_dataset_to_examples(datasets, mode, history_turn=-1):
                             dialog_act=dialog_act,
                             answer_text=answer_text,
                             start_position_character=start_position_character, 
-                            end_position_character=end_position_character,
                             is_impossible=is_impossible,
                             answers=answers,
                             history_span_list=history_span_list)
-    
+
         examples.append(example)
 
     return examples
+
+def convert_datalist_to_examples(dataset, history_dict=None):
+    
+    examples = []
+    
+    for index in trange(len(dataset)):
+        data = dataset[index]
+
+        start_position_character = None
+        answer_text = None
+        answers = []
+        answer_text_criterion = data['orig_answer']['text']
+        is_impossible = True if answer_text_criterion == 'CANNOTANSWER' else False
+
+        answer = data['orig_answer']
+        answer_text = answer['text']
+        start_position_character = answer['answer_start']
+        answers = data["answers"]
+
+        num = data['id'].split("#")[-1]
+        doc_id = data['id'].split("_q#")[0]
+
+        history_span_list = []
+
+        question = "[CLS] "
+        last_id = 0
+        if eval(num) != 0:
+            previous = eval(num)
+            for prev_idx in range(previous):
+                if history_dict.get(doc_id+"_q#"+str(prev_idx), None):
+                    last_id = prev_idx
+                    history_span_list.append([history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_start'], history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_end'], history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['text']])
+            question = history_dict[doc_id+"_q#"+str(last_id)]['question'][:-5] + " " + history_dict[doc_id+"_q#"+str(last_id)]['prediction']['text'] + " " +"[SEP]" + " "
+            question  = question + data['question'] + " [SEP]"
+            dialog_act = 1
+        else:
+            question  = question + data['question'] + " [SEP]"
+            dialog_act = 1
+
+        example = RCExample(qas_id=data['id'],
+                            question_text=question,
+                            context_text=data["context"],
+                            dialog_act=dialog_act,
+                            answer_text=answer_text,
+                            start_position_character=start_position_character, 
+                            is_impossible=is_impossible,
+                            answers=answers,
+                            history_span_list=history_span_list)
+
+        examples.append(example)
+
+    return examples
+
 
 class RCFeatures:
     """
@@ -805,7 +733,7 @@ class RCFeatures:
         end_position,
         is_impossible,
         qas_id: str = None,
-        history_span_list=[]
+        history_span_list=[],
     ):
         self.input_ids = input_ids
         self.attention_mask = attention_mask
@@ -828,15 +756,13 @@ class RCFeatures:
         self.end_position = end_position
         self.is_impossible = is_impossible
         self.qas_id = qas_id
-        
+
         self.history_start_list = []
         self.history_end_list = []
         
         for item in history_span_list:
             self.history_start_list.append(item[0])
             self.history_end_list.append(item[1])
-        
-
 
 class RCResult:
     """
@@ -851,108 +777,47 @@ class RCResult:
         self.start_logits = start_logits
         self.end_logits = end_logits
         self.unique_id = unique_id
+        self.cls_logits = cls_logits
+
 
         if start_top_index:
             self.start_top_index = start_top_index
             self.end_top_index = end_top_index
-            self.class_logits = cls_logits
-
-def extract_and_save_feature(dataset_dict, mode, tokenizer, is_training, name):
-
-    features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, doc_stride=stride,  is_training=is_training)
-
-    torch.save(
-    {"features": features, "dataset": dataset, "examples": examples},
-    name,
-    )
-
+            self.cls_logits = cls_logits
 
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description="argument parser for HistoryQA project")
+    parser = argparse.ArgumentParser(description="Argument Parser for HistoryQA project")
     parser.add_argument("--config")
     args = parser.parse_args()
     config = yaml.safe_load(open(args.config, "r"))
 
-    mode = config['mode']
-    json_file = config['json_file']
-    is_training = config['is_training']
-    is_dev = config['is_dev']
-    stride = config['stride']
-    max_seq_length = config['max_seq_length']
-    ratio = config['ratio']
-    cached_features_file = config['cache_features_file']
-    model_name = config['model_name']
-    
-    tokenizer = BertTokenizer.from_pretrained(model_name) 
-    data = json.load(open(json_file))['data']
-    dataset_dict = {mode:None}
-    nlp = spacy.load("en", disable=['parser'])
-
     dataset_raw = []
-    
-    if os.path.exists(f"../dataset_local/coqa/dump_complete_{mode}.p"):
-        print(f"load preload datset from ../dataset_local/coqa/dump_complete_{mode}.p")
-        dataset_dict = pickle.load(open(f"../dataset_local/coqa/dump_complete_{mode}.p","rb"))
-    else:
-        print("file not exist, create a pickle file to preload in the next time ..")
-        # preprocess data 
-        for pa_pairs in tqdm(data):
-            # remove redundant character to stablize extracting feature
-            # story = pa_pairs['story']
-            # context = [pre_proc(story)]
-            # doc = [context for context in nlp.pipe(context)][0]
-            # unnormed_tokens = [w.text for w in doc]
-            paragraph_text = pa_pairs['story']
+    tokenizer = eval(config['pretrained_tokenizer']).from_pretrained(config['pretrained_name']) 
+    data = json.load(open(config['json_path']))['data']
+    dataset_dict = {config['mode']:None}
 
-            for idx in range(len(pa_pairs['questions'])):
+    for pa_pairs in data:
+        context_pa_pair = pa_pairs['paragraphs'][0]
+        context = context_pa_pair['context']
+        for qa_pairs in context_pa_pair['qas']:
+            qa_pairs.update({'context': context})
+            dataset_raw.append(qa_pairs)
 
-                data_pair = {}
-                data_pair['question'] = pa_pairs['questions'][idx]['input_text']
-                data_pair['id'] = pa_pairs['id'] + "_q#" + str(pa_pairs['questions'][idx]['turn_id']-1)
-                data_pair['is_impossible'] = False
+    dataset_dict[config['mode']] = dataset_raw
 
-                if pa_pairs['answers'][idx]['span_text'] != "unknown":
+#---------------------------------------------------------------------------
 
-                    if pa_pairs['answers'][idx]['input_text'].lower() == "yes" or pa_pairs['answers'][idx]['input_text'].lower() == "no":
-                        data_pair['dialog_act'] = 1 if  pa_pairs['answers'][idx]['input_text'].lower() == "yes" else 2
-                        data_pair['is_impossible'] = True
-                        data_pair['answers'] = [{'text':pa_pairs['answers'][idx]['input_text'], 'answer_start':-1, 'answer_end':-1, 'gold_ans':pa_pairs['answers'][idx]['input_text'].lower()}]
-
-                    else:
-                        data_pair['dialog_act'] = 3
-                        # answer, char_i_span, char_j_span = free_text_to_span(pa_pairs['answers'][idx]['span_text'], paragraph_text)
-                        answer, char_i, char_j = free_text_to_span(pa_pairs['answers'][idx]['input_text'] ,pa_pairs['answers'][idx]['span_text'])
-
-                        ans_start =char_i + pa_pairs['answers'][idx]['span_start']
-                        ans_end =char_j + pa_pairs['answers'][idx]['span_start']
-
-                        data_pair['answers'] = [{'text':answer, 'answer_start':int(ans_start), 'answer_end':int(ans_end), 'gold_ans':pa_pairs['answers'][idx]['input_text']}]
-                else:
-
-                    data_pair['dialog_act'] = 0
-                    data_pair['answers'] = [{'text':"unknown", 'answer_start': -1, 'answer_end':-1,'gold_ans':pa_pairs['answers'][idx]['input_text'].lower()}]
-                    data_pair['is_impossible'] = True
-                
-                data_pair['context'] = paragraph_text
-                dataset_raw.append(deepcopy(data_pair))
-            dataset_dict[mode] = dataset_raw
-            pickle.dump(dataset_dict, open(f"../dataset_local/coqa/dump_complete_{mode}.p","wb"))
-
-    examples = convert_dataset_to_examples(dataset_dict,mode, history_turn=config['history_turn'])
-
-    if mode == "train":
-        train_sample = int(ratio * len(examples))
-        if not is_dev:
-            examples = examples[:train_sample]
-        else:
-            examples = examples[train_sample:]
-
-    features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, seq_length=max_seq_length, doc_stride=stride,  is_training=is_training, threads=8)
-
+    examples=[None]
+    turn = 0
+    example_dict = collections.defaultdict(list)
+    for index in range(len(dataset_dict[config['mode']])):
+        data = dataset_dict[config['mode']][index]
+        turn_id=data['id'].split("_q#")[-1]
+        example_dict[f'turn_{turn_id}'].append(data)
+    # features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, doc_stride=stride,  is_training=is_training)
     torch.save(
-    {"features": features, "dataset": dataset, "examples": examples},
-    cached_features_file,
+    {"example_dict": example_dict},
+    config['output_name'],
     )
-

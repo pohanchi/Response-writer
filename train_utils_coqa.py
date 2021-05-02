@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Subset
 from utils import set_seed
 from optimizer_utils import *
-from extract_feature_coqa import *
+from extract_feature_bert_coqa_truncated import *
 from evaluate_utils_coqa import *
 
 

@@ -1,6 +1,6 @@
 #!/user/bin/shell
 
-#History Function
+# #History Function
 CUDA_VISIBLE_DEVICES=0 python main_bert_doqa.py --config bert-official-config-train/DoQA/test/train_config_hf_bert_base.yaml
 
 # testing

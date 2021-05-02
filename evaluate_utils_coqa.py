@@ -91,7 +91,7 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
     else:
         output_null_log_odds_file = None
 
-    predictions = compute_predictions_logits(
+    predictions, _ = compute_predictions_logits(
         examples,
         features,
         all_results,

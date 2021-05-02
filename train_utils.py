@@ -40,9 +40,9 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
     ]
     
     optimizer = AdamW(optimizer_grouped_parameters, betas=(train_args['adam_beta1'],train_args["adam_beta2"]),lr=train_args['learning_rate'], eps=train_args['adam_epsilon'])
-    scheduler = get_linear_schedule_with_warmup(
-       optimizer, num_warmup_steps=train_args['warmup_steps'], num_training_steps=t_total
-    )
+    # scheduler = get_linear_schedule_with_warmup(
+    #    optimizer, num_warmup_steps=train_args['warmup_steps'], num_training_steps=t_total
+    # )
 
     # Train!
     logger.info("***** Running training *****")
@@ -72,7 +72,7 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
     BEST_STEP = np.array([0])
 
     for _ in train_iterator:
-        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=train_args['local_rank'] not in [-1, 0])
+        epoch_iterator = tqdm(train_dataloader, dynamic_ncols=True, desc="Iteration", disable=train_args['local_rank'] not in [-1, 0], )
         for step, batch in enumerate(epoch_iterator):
 
             model.train()
@@ -116,7 +116,7 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
                     torch.nn.utils.clip_grad_norm_(model.parameters(), train_args['max_grad_norm'])
 
                 optimizer.step()
-                scheduler.step()  # Update learning rate schedule
+                # scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
 
@@ -136,7 +136,7 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
                         results = evaluate(train_args, cache_validation_file, eval_json, model, tokenizer)
                         for key, value in results.items():
                             record["eval_{}".format(key)] = value
-                    record["lr"]=scheduler.get_last_lr()[0]
+                    # record["lr"]=scheduler.get_last_lr()[0]
                     record["loss"] = (tr_loss - logging_loss) / train_args['logging_steps']
                     logging_loss = tr_loss
                     wandb.log(record,step=global_step)
@@ -171,5 +171,5 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
                             logger.info("Saving model checkpoint to %s", output_dir)
                             json.dump(record, open(json_file, "w"), indent=4)
                             torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
-                            torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
+                            # torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
                             logger.info("Saving optimizer and scheduler states to %s", output_dir)

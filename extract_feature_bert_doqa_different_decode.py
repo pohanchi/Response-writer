@@ -651,9 +651,8 @@ def convert_datalist_to_examples(dataset, history_dict=None):
             previous = eval(num)
             for prev_idx in range(previous):
                 history_span_list.append([history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_start'], history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_end'], history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['text']])
-            # if eval(num) > 0:
-            #     import ipdb; ipdb.set_trace()
-            question = history_dict[doc_id+"_q#"+str(prev_idx)]['question'] + " " + history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['text'] + " " +"[SEP]" + " "
+
+            question = history_dict[doc_id+"_q#"+str(prev_idx)]['question'][:-5] + " " + history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['text'] + " " +"[SEP]" + " "
             question  = question + data['question'] + " [SEP]"
             dialog_act = 1
         else:

@@ -13,7 +13,7 @@ from module import BERTQA_memory, BERTQA, BERTQA_memory_coqa, BERTQA_memory14_co
 
 from transformers import BertTokenizer
 from evaluate_utils_coqa import evaluate 
-from extract_feature_bert_doqa import *
+from extract_feature_bert_coqa_truncated import *
 from utils import *
 
 def main():
@@ -42,7 +42,7 @@ def main():
 
     tokenizer = BertTokenizer.from_pretrained(dir_path)
 
-    wandb.init(project="doqa_twcc_eval_official", name=eval_config['exp_name'])
+    wandb.init(project="coqa_normal_deocde_twcc_eval_official", name=eval_config['exp_name'])
     wandb.config.update(config)
 
     config['device'] = torch.device("cuda")
@@ -51,7 +51,7 @@ def main():
     model = model.to(config['device'])
 
 
-    results = evaluate(config, eval_config['eval_file'], eval_config['eval_json'], model, tokenizer)
+    results, scores = evaluate(config, eval_config['eval_file'], eval_config['eval_json'], model, tokenizer)
 
     record = {}
     for key, value in results.items():

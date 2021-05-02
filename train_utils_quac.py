@@ -140,7 +140,7 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
                         results = evaluate(train_args, cache_validation_file, eval_json, model, tokenizer)
                         for key, value in results.items():
                             record["eval_{}".format(key)] = value
-                    record["lr"]=scheduler.get_last_lr()[0]
+                    # record["lr"]=scheduler.get_last_lr()[0]
                     record["loss"] = (tr_loss - logging_loss) / train_args['logging_steps']
                     logging_loss = tr_loss
                     wandb.log(record,step=global_step)
