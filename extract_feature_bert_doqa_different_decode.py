@@ -241,222 +241,425 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
             all_doc_tokens, tok_start_position, tok_end_position, tokenizer, example.answer_text
         )
 
-    spans = []
 
-    history_span_modify = []
     # handle history answer embedding
-    for item in example.history_span_list:
-        if item[0] == -1:
-            continue
-        history_start_position = orig_to_tok_index[item[0]]
-        if item[1] < len(example.doc_tokens) - 1:
-            history_end_position = orig_to_tok_index[item[1]+1] - 1
-        else:
-            history_end_position = len(all_doc_tokens) - 1
-        
-        (tok_history_start_position, tok_history_end_position) = _improve_answer_span(
-            all_doc_tokens, history_start_position, history_end_position, tokenizer, item[2]
-        )
-        history_span_modify.append((tok_history_start_position, tok_history_end_position))        
-
-    truncated_query = tokenizer.encode(
-        example.question_text, add_special_tokens=False, truncation=False)
-
-    indexes = np.where(np.array(truncated_query) == 102)
-    question_attention_mask = np.ones_like(np.array(truncated_query)).tolist()
-
-    if len(indexes[0])==1:
-
-        question_seg = np.zeros_like(np.array(truncated_query))
-        question_seg[1:indexes[0][-1]+1] = 1
-        question_seg = question_seg.tolist()
-        question_start = 1
-        question_len = indexes[0][-1]+1
-
-    else:
-        indexes = indexes[0][::-1]
-        question_seg = np.zeros_like(np.array(truncated_query))
-        seg_value = [ 1, -1, -2 ]
-
-        for i in range(len(indexes)-1):
-            if i < 3:
-                if i+1 == (len(indexes)-1):
-                    question_seg[1:indexes[i]+1] = seg_value[i]
-                else:
-                    question_seg[indexes[i+1]+1:indexes[i]+1] = seg_value[i]
-            else:
-                if i+1 == (len(indexes)-1):
-                    question_seg[1:indexes[i]+1] = 0
-                else:
-                    question_seg[indexes[i+1]:indexes[i]+1] = 0
-            if i == 0:
-                question_start = indexes[i+1]+1
-                question_len = indexes[0]+1
-
-        question_seg = question_seg.tolist()
-
-    # Tokenizers who insert 2 SEP tokens in-between <context> & <question> need to have special handling
-    # in the way they compute mask of added tokens.
-    tokenizer_type = type(tokenizer).__name__.replace("Tokenizer", "").lower()
-    sequence_added_tokens = (
-        tokenizer.max_len - tokenizer.max_len_single_sentence
-    )
-    sequence_pair_added_tokens = tokenizer.max_len - tokenizer.max_len_sentences_pair
-    sequence_added_tokens = 1
-
-    span_doc_tokens = all_doc_tokens
-    while len(spans) * doc_stride < len(all_doc_tokens):
-
-        # Define the side we want to truncate / pad and the text/pair sorting
-        if tokenizer.padding_side == "right":
-            pairs = span_doc_tokens
-            truncation = TruncationStrategy.DO_NOT_TRUNCATE.value
-        else:
-            pairs = span_doc_tokens
-            truncation = TruncationStrategy.DO_NOT_TRUNCATE.value
-        
-
-        encoded_dict = tokenizer.encode_plus(
-            pairs,
-            truncation=truncation,
-            return_token_type_ids=True
-        )
-
-        paragraph_len = len(all_doc_tokens)
-
-        if tokenizer.pad_token_id in encoded_dict["input_ids"]:
-            if tokenizer.padding_side == "right":
-                non_padded_ids = encoded_dict["input_ids"][: encoded_dict["input_ids"].index(tokenizer.pad_token_id)]
-            else:
-                last_padding_id_position = (
-                    len(encoded_dict["input_ids"]) - 1 - encoded_dict["input_ids"][::-1].index(tokenizer.pad_token_id)
-                )
-                non_padded_ids = encoded_dict["input_ids"][last_padding_id_position + 1 :]
-
-        else:
-            non_padded_ids = encoded_dict["input_ids"]
-
-        tokens = tokenizer.convert_ids_to_tokens(non_padded_ids)
-
-        token_to_orig_map = {}
-        for i in range(paragraph_len):
-            index = i+sequence_added_tokens #(different! index = i+sequence_added_tokens)
-            token_to_orig_map[index] = tok_to_orig_index[len(spans) * doc_stride + i]
-
-        encoded_dict["paragraph_len"] = paragraph_len
-        encoded_dict["tokens"] = tokens
-        encoded_dict["token_to_orig_map"] = token_to_orig_map
-        encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens # (different! encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens)
-        encoded_dict["token_is_max_context"] = {}
-        encoded_dict["start"] = len(spans) * doc_stride
-        encoded_dict["length"] = paragraph_len
-
-        spans.append(encoded_dict)
-
-        if "overflowing_tokens" not in encoded_dict or (
-            "overflowing_tokens" in encoded_dict and len(encoded_dict["overflowing_tokens"]) == 0
-        ):
-            break
-        span_doc_tokens = encoded_dict["overflowing_tokens"]
-
-    for doc_span_index in range(len(spans)):
-        for j in range(spans[doc_span_index]["paragraph_len"]):
-            is_max_context = _new_check_is_max_context(spans, doc_span_index, doc_span_index * doc_stride + j)
-            index = (
-                j
-                if tokenizer.padding_side == "left"
-                else spans[doc_span_index]["truncated_query_with_special_tokens_length"] + j
-            )
-            spans[doc_span_index]["token_is_max_context"][index] = is_max_context
-
-    for span in spans:
-
-        # Identify the position of the CLS token
-        cls_index = span["input_ids"].index(tokenizer.cls_token_id)
-
-        # p_mask: mask with 1 for token than cannot be in the answer (0 for token which can be in an answer)
-        # Original TF implem also keep the classification token (set to 0)
-        p_mask = np.ones_like(span["token_type_ids"])
-        if tokenizer.padding_side == "right":
-            p_mask[sequence_added_tokens :] = 0  #(different than offficial code (p_mask[sequence_added_tokens :] = 0))
-        else:
-            p_mask[-len(span["tokens"]) : -(len(truncated_query) + sequence_added_tokens)] = 0
-
-        pad_token_indices = np.where(span["input_ids"] == tokenizer.pad_token_id)
-
-        special_token_indices = np.asarray(
-            tokenizer.get_special_tokens_mask(span["input_ids"], already_has_special_tokens=True)
-        ).nonzero()
-
-        p_mask[pad_token_indices] = 1
-        p_mask[special_token_indices] = 1
-
-        # Set the cls index to 0: the CLS index can be used for impossible answers
-        p_mask[cls_index] = 0
-
-        span_is_impossible = example.is_impossible
-        start_position = 0
-        end_position = 0
-        if is_training and not span_is_impossible:
-            # For training, if our document chunk does not contain an annotation
-            # we throw it out, since there is nothing to predict.
-            doc_start = span["start"]
-            doc_end = span["start"] + span["length"] - 1
-            out_of_span = False
-
-            if not (tok_start_position >= doc_start and tok_end_position <= doc_end):
-                out_of_span = True
-
-            if out_of_span:
-                start_position = cls_index
-                end_position = cls_index
-                span_is_impossible = True
-            else:
-                if tokenizer.padding_side == "left":
-                    doc_offset = 0
-                else:
-                    doc_offset = sequence_added_tokens # different! ( doc_offset = sequence_added_tokens)
-
-                start_position = tok_start_position - doc_start + doc_offset
-                end_position = tok_end_position - doc_start + doc_offset
-        
-        history_in_context =[]
-        for index in range(len(history_span_modify)):
-            doc_start = span["start"]
-            doc_end = span["start"] + span["length"] - 1
-            doc_offset = sequence_added_tokens
-            if not history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end:
+    for path_idx in range(len(example.history_span_list)):
+        history_span_modify = []
+        for item in example.history_span_list[path_idx]:
+            if item[0] == -1:
                 continue
+            history_start_position = orig_to_tok_index[item[0]]
+            if item[1] < len(example.doc_tokens) - 1:
+                history_end_position = orig_to_tok_index[item[1]+1] - 1
             else:
-                start_history_position = history_span_modify[index][0] - doc_start + doc_offset
-                end_history_position = history_span_modify[index][1] - doc_start + doc_offset
-                history_in_context.append((start_history_position, end_history_position))
-        
-        features.append(
-            RCFeatures(
-                span["input_ids"],
-                span["attention_mask"],
-                truncated_query,
-                question_seg,
-                question_attention_mask,
-                question_start,
-                question_len,
-                example.dialog_act,
-                cls_index,
-                p_mask.tolist(),
-                example_index=0,  # Can not set unique_id and example_index here. They will be set after multiple processing.
-                unique_id=0,
-                paragraph_len=span["paragraph_len"],
-                token_is_max_context=span["token_is_max_context"],
-                tokens=span["tokens"],
-                token_to_orig_map=span["token_to_orig_map"],
-                start_position=start_position,
-                end_position=end_position,
-                is_impossible=span_is_impossible,
-                qas_id=example.qas_id,
-                history_span_list=history_in_context,
+                history_end_position = len(all_doc_tokens) - 1
+            
+            (tok_history_start_position, tok_history_end_position) = _improve_answer_span(
+                all_doc_tokens, history_start_position, history_end_position, tokenizer, item[2]
             )
+            history_span_modify.append((tok_history_start_position, tok_history_end_position))        
+
+        truncated_query = tokenizer.encode(
+            example.question_text[path_idx], add_special_tokens=False, truncation=False)
+
+        indexes = np.where(np.array(truncated_query) == 102)
+        question_attention_mask = np.ones_like(np.array(truncated_query)).tolist()
+
+        if len(indexes[0])==1:
+
+            question_seg = np.zeros_like(np.array(truncated_query))
+            question_seg[1:indexes[0][-1]+1] = 1
+            question_seg = question_seg.tolist()
+            question_start = 1
+            question_len = indexes[0][-1]+1
+
+        else:
+            indexes = indexes[0][::-1]
+            question_seg = np.zeros_like(np.array(truncated_query))
+            seg_value = [ 1, -1, -2 ]
+
+            for i in range(len(indexes)-1):
+                if i < 3:
+                    if i+1 == (len(indexes)-1):
+                        question_seg[1:indexes[i]+1] = seg_value[i]
+                    else:
+                        question_seg[indexes[i+1]+1:indexes[i]+1] = seg_value[i]
+                else:
+                    if i+1 == (len(indexes)-1):
+                        question_seg[1:indexes[i]+1] = 0
+                    else:
+                        question_seg[indexes[i+1]:indexes[i]+1] = 0
+                if i == 0:
+                    question_start = indexes[i+1]+1
+                    question_len = indexes[0]+1
+
+            question_seg = question_seg.tolist()
+
+        # Tokenizers who insert 2 SEP tokens in-between <context> & <question> need to have special handling
+        # in the way they compute mask of added tokens.
+        tokenizer_type = type(tokenizer).__name__.replace("Tokenizer", "").lower()
+        sequence_added_tokens = (
+            tokenizer.max_len - tokenizer.max_len_single_sentence
         )
+        sequence_pair_added_tokens = tokenizer.max_len - tokenizer.max_len_sentences_pair
+        sequence_added_tokens = 1
+
+        span_doc_tokens = all_doc_tokens
+        spans = []
+        while len(spans) * doc_stride < len(all_doc_tokens):
+
+            # Define the side we want to truncate / pad and the text/pair sorting
+            if tokenizer.padding_side == "right":
+                pairs = span_doc_tokens
+                truncation = TruncationStrategy.DO_NOT_TRUNCATE.value
+            else:
+                pairs = span_doc_tokens
+                truncation = TruncationStrategy.DO_NOT_TRUNCATE.value
+            
+
+            encoded_dict = tokenizer.encode_plus(
+                pairs,
+                truncation=truncation,
+                return_token_type_ids=True
+            )
+
+            paragraph_len = len(all_doc_tokens)
+
+            if tokenizer.pad_token_id in encoded_dict["input_ids"]:
+                if tokenizer.padding_side == "right":
+                    non_padded_ids = encoded_dict["input_ids"][: encoded_dict["input_ids"].index(tokenizer.pad_token_id)]
+                else:
+                    last_padding_id_position = (
+                        len(encoded_dict["input_ids"]) - 1 - encoded_dict["input_ids"][::-1].index(tokenizer.pad_token_id)
+                    )
+                    non_padded_ids = encoded_dict["input_ids"][last_padding_id_position + 1 :]
+
+            else:
+                non_padded_ids = encoded_dict["input_ids"]
+
+            tokens = tokenizer.convert_ids_to_tokens(non_padded_ids)
+
+            token_to_orig_map = {}
+            for i in range(paragraph_len):
+                index = i+sequence_added_tokens #(different! index = i+sequence_added_tokens)
+                token_to_orig_map[index] = tok_to_orig_index[len(spans) * doc_stride + i]
+
+            encoded_dict["paragraph_len"] = paragraph_len
+            encoded_dict["tokens"] = tokens
+            encoded_dict["token_to_orig_map"] = token_to_orig_map
+            encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens # (different! encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens)
+            encoded_dict["token_is_max_context"] = {}
+            encoded_dict["start"] = len(spans) * doc_stride
+            encoded_dict["length"] = paragraph_len
+
+            spans.append(encoded_dict)
+
+            if "overflowing_tokens" not in encoded_dict or (
+                "overflowing_tokens" in encoded_dict and len(encoded_dict["overflowing_tokens"]) == 0
+            ):
+                break
+            span_doc_tokens = encoded_dict["overflowing_tokens"]
+
+        for doc_span_index in range(len(spans)):
+            for j in range(spans[doc_span_index]["paragraph_len"]):
+                is_max_context = _new_check_is_max_context(spans, doc_span_index, doc_span_index * doc_stride + j)
+                index = (
+                    j
+                    if tokenizer.padding_side == "left"
+                    else spans[doc_span_index]["truncated_query_with_special_tokens_length"] + j
+                )
+                spans[doc_span_index]["token_is_max_context"][index] = is_max_context
+
+        for span in spans:
+
+            # Identify the position of the CLS token
+            cls_index = span["input_ids"].index(tokenizer.cls_token_id)
+
+            # p_mask: mask with 1 for token than cannot be in the answer (0 for token which can be in an answer)
+            # Original TF implem also keep the classification token (set to 0)
+            p_mask = np.ones_like(span["token_type_ids"])
+            if tokenizer.padding_side == "right":
+                p_mask[sequence_added_tokens :] = 0  #(different than offficial code (p_mask[sequence_added_tokens :] = 0))
+            else:
+                p_mask[-len(span["tokens"]) : -(len(truncated_query) + sequence_added_tokens)] = 0
+
+            pad_token_indices = np.where(span["input_ids"] == tokenizer.pad_token_id)
+
+            special_token_indices = np.asarray(
+                tokenizer.get_special_tokens_mask(span["input_ids"], already_has_special_tokens=True)
+            ).nonzero()
+
+            p_mask[pad_token_indices] = 1
+            p_mask[special_token_indices] = 1
+
+            # Set the cls index to 0: the CLS index can be used for impossible answers
+            p_mask[cls_index] = 0
+
+            span_is_impossible = example.is_impossible
+            start_position = 0
+            end_position = 0
+            if is_training and not span_is_impossible:
+                # For training, if our document chunk does not contain an annotation
+                # we throw it out, since there is nothing to predict.
+                doc_start = span["start"]
+                doc_end = span["start"] + span["length"] - 1
+                out_of_span = False
+
+                if not (tok_start_position >= doc_start and tok_end_position <= doc_end):
+                    out_of_span = True
+
+                if out_of_span:
+                    start_position = cls_index
+                    end_position = cls_index
+                    span_is_impossible = True
+                else:
+                    if tokenizer.padding_side == "left":
+                        doc_offset = 0
+                    else:
+                        doc_offset = sequence_added_tokens # different! ( doc_offset = sequence_added_tokens)
+
+                    start_position = tok_start_position - doc_start + doc_offset
+                    end_position = tok_end_position - doc_start + doc_offset
+            
+            history_in_context =[]
+            for index in range(len(history_span_modify)):
+                doc_start = span["start"]
+                doc_end = span["start"] + span["length"] - 1
+                doc_offset = sequence_added_tokens
+                if not history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end:
+                    continue
+                else:
+                    start_history_position = history_span_modify[index][0] - doc_start + doc_offset
+                    end_history_position = history_span_modify[index][1] - doc_start + doc_offset
+                    history_in_context.append((start_history_position, end_history_position))
+            
+            features.append(
+                RCFeatures(
+                    span["input_ids"],
+                    span["attention_mask"],
+                    truncated_query,
+                    question_seg,
+                    question_attention_mask,
+                    question_start,
+                    question_len,
+                    example.dialog_act,
+                    cls_index,
+                    p_mask.tolist(),
+                    example_index=0,  # Can not set unique_id and example_index here. They will be set after multiple processing.
+                    unique_id=0,
+                    paragraph_len=span["paragraph_len"],
+                    token_is_max_context=span["token_is_max_context"],
+                    tokens=span["tokens"],
+                    token_to_orig_map=span["token_to_orig_map"],
+                    start_position=start_position,
+                    end_position=end_position,
+                    is_impossible=span_is_impossible,
+                    qas_id=example.qas_id,
+                    history_span_list=history_in_context,
+                )
+            )
+
+    if len(example.history_span_list) == 0:
+        # The case: the first question
+        history_span_modify = []
+        truncated_query = tokenizer.encode(example.question_text[0], add_special_tokens=False, truncation=False)
+
+        indexes = np.where(np.array(truncated_query) == 102)
+        question_attention_mask = np.ones_like(np.array(truncated_query)).tolist()
+
+        if len(indexes[0])==1:
+
+            question_seg = np.zeros_like(np.array(truncated_query))
+            question_seg[1:indexes[0][-1]+1] = 1
+            question_seg = question_seg.tolist()
+            question_start = 1
+            question_len = indexes[0][-1]+1
+
+        else:
+            indexes = indexes[0][::-1]
+            question_seg = np.zeros_like(np.array(truncated_query))
+            seg_value = [ 1, -1, -2 ]
+
+            for i in range(len(indexes)-1):
+                if i < 3:
+                    if i+1 == (len(indexes)-1):
+                        question_seg[1:indexes[i]+1] = seg_value[i]
+                    else:
+                        question_seg[indexes[i+1]+1:indexes[i]+1] = seg_value[i]
+                else:
+                    if i+1 == (len(indexes)-1):
+                        question_seg[1:indexes[i]+1] = 0
+                    else:
+                        question_seg[indexes[i+1]:indexes[i]+1] = 0
+                if i == 0:
+                    question_start = indexes[i+1]+1
+                    question_len = indexes[0]+1
+
+            question_seg = question_seg.tolist()
+
+        # Tokenizers who insert 2 SEP tokens in-between <context> & <question> need to have special handling
+        # in the way they compute mask of added tokens.
+        tokenizer_type = type(tokenizer).__name__.replace("Tokenizer", "").lower()
+        sequence_added_tokens = (
+            tokenizer.max_len - tokenizer.max_len_single_sentence
+        )
+        sequence_pair_added_tokens = tokenizer.max_len - tokenizer.max_len_sentences_pair
+        sequence_added_tokens = 1
+
+        span_doc_tokens = all_doc_tokens
+        spans = []
+        while len(spans) * doc_stride < len(all_doc_tokens):
+
+            # Define the side we want to truncate / pad and the text/pair sorting
+            if tokenizer.padding_side == "right":
+                pairs = span_doc_tokens
+                truncation = TruncationStrategy.DO_NOT_TRUNCATE.value
+            else:
+                pairs = span_doc_tokens
+                truncation = TruncationStrategy.DO_NOT_TRUNCATE.value
+            
+
+            encoded_dict = tokenizer.encode_plus(
+                pairs,
+                truncation=truncation,
+                return_token_type_ids=True
+            )
+
+            paragraph_len = len(all_doc_tokens)
+
+            if tokenizer.pad_token_id in encoded_dict["input_ids"]:
+                if tokenizer.padding_side == "right":
+                    non_padded_ids = encoded_dict["input_ids"][: encoded_dict["input_ids"].index(tokenizer.pad_token_id)]
+                else:
+                    last_padding_id_position = (
+                        len(encoded_dict["input_ids"]) - 1 - encoded_dict["input_ids"][::-1].index(tokenizer.pad_token_id)
+                    )
+                    non_padded_ids = encoded_dict["input_ids"][last_padding_id_position + 1 :]
+
+            else:
+                non_padded_ids = encoded_dict["input_ids"]
+
+            tokens = tokenizer.convert_ids_to_tokens(non_padded_ids)
+
+            token_to_orig_map = {}
+            for i in range(paragraph_len):
+                index = i+sequence_added_tokens #(different! index = i+sequence_added_tokens)
+                token_to_orig_map[index] = tok_to_orig_index[len(spans) * doc_stride + i]
+
+            encoded_dict["paragraph_len"] = paragraph_len
+            encoded_dict["tokens"] = tokens
+            encoded_dict["token_to_orig_map"] = token_to_orig_map
+            encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens # (different! encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens)
+            encoded_dict["token_is_max_context"] = {}
+            encoded_dict["start"] = len(spans) * doc_stride
+            encoded_dict["length"] = paragraph_len
+
+            spans.append(encoded_dict)
+
+            if "overflowing_tokens" not in encoded_dict or (
+                "overflowing_tokens" in encoded_dict and len(encoded_dict["overflowing_tokens"]) == 0
+            ):
+                break
+            span_doc_tokens = encoded_dict["overflowing_tokens"]
+
+        for doc_span_index in range(len(spans)):
+            for j in range(spans[doc_span_index]["paragraph_len"]):
+                is_max_context = _new_check_is_max_context(spans, doc_span_index, doc_span_index * doc_stride + j)
+                index = (
+                    j
+                    if tokenizer.padding_side == "left"
+                    else spans[doc_span_index]["truncated_query_with_special_tokens_length"] + j
+                )
+                spans[doc_span_index]["token_is_max_context"][index] = is_max_context
+
+        for span in spans:
+
+            # Identify the position of the CLS token
+            cls_index = span["input_ids"].index(tokenizer.cls_token_id)
+
+            # p_mask: mask with 1 for token than cannot be in the answer (0 for token which can be in an answer)
+            # Original TF implem also keep the classification token (set to 0)
+            p_mask = np.ones_like(span["token_type_ids"])
+            if tokenizer.padding_side == "right":
+                p_mask[sequence_added_tokens :] = 0  #(different than offficial code (p_mask[sequence_added_tokens :] = 0))
+            else:
+                p_mask[-len(span["tokens"]) : -(len(truncated_query) + sequence_added_tokens)] = 0
+
+            pad_token_indices = np.where(span["input_ids"] == tokenizer.pad_token_id)
+
+            special_token_indices = np.asarray(
+                tokenizer.get_special_tokens_mask(span["input_ids"], already_has_special_tokens=True)
+            ).nonzero()
+
+            p_mask[pad_token_indices] = 1
+            p_mask[special_token_indices] = 1
+
+            # Set the cls index to 0: the CLS index can be used for impossible answers
+            p_mask[cls_index] = 0
+
+            span_is_impossible = example.is_impossible
+            start_position = 0
+            end_position = 0
+            if is_training and not span_is_impossible:
+                # For training, if our document chunk does not contain an annotation
+                # we throw it out, since there is nothing to predict.
+                doc_start = span["start"]
+                doc_end = span["start"] + span["length"] - 1
+                out_of_span = False
+
+                if not (tok_start_position >= doc_start and tok_end_position <= doc_end):
+                    out_of_span = True
+
+                if out_of_span:
+                    start_position = cls_index
+                    end_position = cls_index
+                    span_is_impossible = True
+                else:
+                    if tokenizer.padding_side == "left":
+                        doc_offset = 0
+                    else:
+                        doc_offset = sequence_added_tokens # different! ( doc_offset = sequence_added_tokens)
+
+                    start_position = tok_start_position - doc_start + doc_offset
+                    end_position = tok_end_position - doc_start + doc_offset
+            
+            history_in_context =[]
+            for index in range(len(history_span_modify)):
+                doc_start = span["start"]
+                doc_end = span["start"] + span["length"] - 1
+                doc_offset = sequence_added_tokens
+                if not history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end:
+                    continue
+                else:
+                    start_history_position = history_span_modify[index][0] - doc_start + doc_offset
+                    end_history_position = history_span_modify[index][1] - doc_start + doc_offset
+                    history_in_context.append((start_history_position, end_history_position))
+            
+            features.append(
+                RCFeatures(
+                    span["input_ids"],
+                    span["attention_mask"],
+                    truncated_query,
+                    question_seg,
+                    question_attention_mask,
+                    question_start,
+                    question_len,
+                    example.dialog_act,
+                    cls_index,
+                    p_mask.tolist(),
+                    example_index=0,  # Can not set unique_id and example_index here. They will be set after multiple processing.
+                    unique_id=0,
+                    paragraph_len=span["paragraph_len"],
+                    token_is_max_context=span["token_is_max_context"],
+                    tokens=span["tokens"],
+                    token_to_orig_map=span["token_to_orig_map"],
+                    start_position=start_position,
+                    end_position=end_position,
+                    is_impossible=span_is_impossible,
+                    qas_id=example.qas_id,
+                    history_span_list=history_in_context,
+                )
+            )
     return features
 
 def _improve_answer_span(doc_tokens, input_start, input_end, tokenizer, orig_answer_text):
@@ -556,14 +759,23 @@ class RCExample:
         self.doc_tokens = doc_tokens
         self.char_to_word_offset = char_to_word_offset
         self.history_span_list = []
+        # if len(self.history_origin):
+        #     if len(self.history_origin[0]) > 1:
+        #         import ipdb; ipdb.set_trace() 
+        # try:
         for i in range(len(self.history_origin)):
-            if self.history_origin[i][2] == "CANNOTANSWER":
-                start_position_history = -1
-                end_position_history = -1
-            else:
-                start_position_history = self.history_origin[i][0]
-                end_position_history = self.history_origin[i][1]
-            self.history_span_list.append([start_position_history, end_position_history, self.history_origin[i][2]])
+            temp = []
+            for j in range(len(self.history_origin[i])):
+                if self.history_origin[i][j][2] == "CANNOTANSWER":
+                    start_position_history = -1
+                    end_position_history = -1
+                else:
+                    start_position_history = self.history_origin[i][j][0]
+                    end_position_history = self.history_origin[i][j][1]
+                temp.append([start_position_history, end_position_history, self.history_origin[i][j][2]])
+            self.history_span_list.append(temp)
+        # except:
+        #     import ipdb; ipdb.set_trace()        
         # Start and end positions only has a value during evaluation.
         if start_position_character is not None and not is_impossible:
             self.start_position = char_to_word_offset[start_position_character]
@@ -625,7 +837,7 @@ def convert_dataset_to_examples(datasets, mode):
     return examples
 
 
-def convert_datalist_to_examples(dataset, history_dict=None):
+def convert_datalist_to_examples(dataset, history_dict=None, beam_search=1):
     
     examples = []
     
@@ -645,22 +857,53 @@ def convert_datalist_to_examples(dataset, history_dict=None):
 
         question = "[CLS] "
 
-        history_span_list = []
+        history_span_choice_list = []
 
         if eval(num) != 0:
             previous = eval(num)
-            for prev_idx in range(previous):
-                history_span_list.append([history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_start'], history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_end'], history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['text']])
+            history_span_choice_list = []
 
-            question = history_dict[doc_id+"_q#"+str(prev_idx)]['question'][:-5] + " " + history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['text'] + " " +"[SEP]" + " "
-            question  = question + data['question'] + " [SEP]"
+            for prev_idx in range(previous):
+                temp = []
+                answer_start = history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_start'] 
+                answer_end = history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_end']
+                answer_text = history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['text']
+
+                if len(history_span_choice_list) == 0:
+                    if beam_search == 1:
+                        temp.append([[answer_start[0],answer_end[0], answer_text[0]]])
+                    else:
+                        for beam_id in range(beam_search):
+                            temp.append([[answer_start[beam_id],answer_end[beam_id], answer_text[beam_id]]])
+                else:
+                    for each_set in history_span_choice_list:
+                        if beam_search == 1:
+                            temp.append([each_set[0], [answer_start[0], answer_end[0], answer_text[0]]])
+                        else:
+
+                            for beam_id in range(beam_search):
+                                temp.append([each_set[0], [answer_start[beam_id], answer_end[beam_id], answer_text[beam_id]]])
+                history_span_choice_list = temp
+            prev_q_list = history_dict[doc_id+"_q#"+str(previous-1)]['question']
+            prev_ans_list = history_dict[doc_id+"_q#"+str(previous-1)]['prediction']['text']
+            question_text = []
+
+            for index in range(len(prev_q_list)):
+                for beam_id in range(beam_search):
+                    question = prev_q_list[index][:-5] + " " + prev_ans_list[beam_id] + " " +"[SEP]" + " "
+                    question = question + data['question'] + " [SEP]"
+                    question_text.append(question)
+
             dialog_act = 1
         else:
+            question_text = []
             question  = question + data['question'] + " [SEP]"
             dialog_act = 1
+            question_text.append(question)
+
 
         example = RCExample(qas_id=data['id'],
-                            question_text=question,
+                            question_text=question_text,
                             context_text=data["context"],
                             dialog_act=dialog_act,
                             answer_text=answer_text,
@@ -668,7 +911,7 @@ def convert_datalist_to_examples(dataset, history_dict=None):
                             title=data['title'],
                             is_impossible=is_impossible,
                             answers=answers,
-                            history_span_list=history_span_list)
+                            history_span_list=history_span_choice_list)
     
         examples.append(example)
 

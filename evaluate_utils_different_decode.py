@@ -11,7 +11,7 @@ import IPython
 import pdb
 
 
-def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
+def evaluate(train_args, eval_file, eval_json, model, tokenizer, beam_search, prefix=""):
     
     preprocess= torch.load(eval_file)
     
@@ -32,7 +32,7 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
 
         subset_dataset = example_dict[key]
 
-        examples = convert_datalist_to_examples(subset_dataset, history_turns)
+        examples = convert_datalist_to_examples(subset_dataset, history_turns, beam_search)
 
         features, dataset = convert_examples_to_features(examples, tokenizer=tokenizer, is_training=False)
 
@@ -115,6 +115,7 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
             train_args['version_2_with_negative'],
             train_args['null_score_diff_threshold'],
             tokenizer,
+            beam_search,
         )
 
         key_set = list(predictions.keys())
@@ -212,6 +213,7 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
         train_args['version_2_with_negative'],
         train_args['null_score_diff_threshold'],
         tokenizer,
+        beam_search,
     )
 
 

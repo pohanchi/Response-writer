@@ -26,6 +26,9 @@ def main():
     
     if "bottleneck_size" not in list(eval_config.keys()):
         eval_config['bottleneck_size'] = 32
+    
+    if "beam_search" not in list(eval_config.keys()):
+        eval_config['beam_search'] = 1
 
     saved_directory = eval_config['saved_directory']
     sub_directory_list = [x[0] for x in os.walk(saved_directory)]
@@ -52,7 +55,7 @@ def main():
     model = model.to(config['device'])
 
 
-    results = evaluate(config, eval_config['eval_file'], eval_config['eval_json'], model, tokenizer)
+    results = evaluate(config, eval_config['eval_file'], eval_config['eval_json'], model, tokenizer, eval_config['beam_search'])
 
     record = {}
     for key, value in results.items():

@@ -310,6 +310,7 @@ def compute_predictions_logits(
     version_2_with_negative,
     null_score_diff_threshold,
     tokenizer,
+    beam_search=1,
 ):
     """Write final predictions to the json file and log-odds of null if needed."""
     if output_prediction_file:
@@ -451,12 +452,14 @@ def compute_predictions_logits(
             # In very rare edge cases we could only have single null prediction.
             # So we just create a nonce prediction in this case to avoid failure.
             if len(nbest) == 1:
-                nbest.insert(0, _NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0, answer_start=-1, answer_end=-1))
+                for _ in range(beam_search):
+                    nbest.insert(0, _NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0, answer_start=-1, answer_end=-1))
 
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
-            nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0, answer_start=-1, answer_end=-1))
+            for _ in range(beam_search):
+                nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0, answer_start=-1, answer_end=-1))
 
         assert len(nbest) >= 1, "No valid predictions"
 
@@ -494,10 +497,10 @@ def compute_predictions_logits(
             scores_diff_json[example.qas_id] = score_diff
             if score_diff > null_score_diff_threshold:
                 official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = ("CANNOTANSWER", "y", "y")
-                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": "CANNOTANSWER", "yesno": "y", "followup":"y", "answer_start": -1,"answer_end":-1, "question_answer_string": example.question_text}
+                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": [ "CANNOTANSWER" for _ in range(beam_search)], "yesno": "y", "followup":"y", "answer_start": [ -1 for _ in range(beam_search)],"answer_end":[ -1 for _ in range(beam_search)], "question_answer_string": example.question_text}
             else:
                 official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = (best_non_null_entry.text, "y", "y")
-                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": best_non_null_entry.text, "yesno": "y", "followup":"y",  "answer_start": best_non_null_entry.answer_start, "answer_end":best_non_null_entry.answer_end, "question_answer_string": example.question_text}
+                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": [nbest_json[i]['text'] for i in range(beam_search)], "yesno": "y", "followup":"y",  "answer_start": [nbest_json[i]['answer_start'] for i in range(beam_search)], "answer_end":[nbest_json[i]['answer_end'] for i in range(beam_search)], "question_answer_string": example.question_text}
 
             all_nbest_json[example.qas_id] = nbest_json
     
@@ -507,7 +510,7 @@ def compute_predictions_logits(
         qids=list(all_predictions[paragraph_id].keys())
         qids.sort(key=lambda e: int(e.split("_q#")[-1]))
         for qid in qids:
-            data_format['best_span_str'].append(all_predictions[paragraph_id][qid]["best_span_str"])
+            data_format['best_span_str'].append(all_predictions[paragraph_id][qid]["best_span_str"][0])
             data_format['qid'].append(qid)
             data_format['followup'].append(all_predictions[paragraph_id][qid]["followup"])
             data_format['yesno'].append(all_predictions[paragraph_id][qid]["yesno"])
