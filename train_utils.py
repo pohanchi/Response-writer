@@ -88,8 +88,12 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
                 "dialog_act": batch[8],
                 "start_positions":batch[9],
                 "end_positions": batch[10],
-                "history_starts": batch[15] if len(batch) >= 16 else None,
-                "history_ends": batch[16] if len(batch) >= 16 else None,
+                "history_starts": batch[15] if len(batch) >= 17 else None,
+                "history_ends": batch[16] if len(batch) >= 17 else None,
+                "future_starts": batch[17] if len(batch) >= 19 else None,
+                "future_ends": batch[18] if len(batch) >= 19 else None,
+                "future_q":batch[19] if len(batch) >= 21 else None,
+                "future_att":batch[20] if len(batch) >= 21 else None,
             }
 
             outputs = model(**inputs)

@@ -10263,10 +10263,19 @@ class BertLMHeadModel(BertPreTrainedModel):
         lm_loss = None
         if labels is not None:
             # we are doing next-token prediction; shift prediction scores and input ids by one
-            shifted_prediction_scores = prediction_scores[:, :-1, :].contiguous()
-            labels = labels[:, 1:].contiguous()
-            loss_fct = CrossEntropyLoss()
-            lm_loss = loss_fct(shifted_prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+            number = 0
+            lm_loss = torch.tensor(0.).to(labels.device)
+            for i in range(len(labels)):
+                if labels[i][0] == 101 and labels[i][1] == 102:
+                    continue
+                number +=1
+                shifted_prediction_scores = prediction_scores[i, :-1, :].contiguous()
+                label_view = labels[i, 1:].contiguous()
+                loss_fct = CrossEntropyLoss(ignore_index=0,reduction="sum")
+                lm_loss += loss_fct(shifted_prediction_scores.view(-1, self.config.vocab_size), label_view.view(-1))
+            if number >0:
+                lm_loss /= number
+            # import ipdb; ipdb.set_trace()
 
         if not return_dict:
             output = (prediction_scores,) + outputs[2:]

@@ -127,7 +127,8 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, beam_search, pr
                 history_turns[key_s]['prediction']['text'] = predictions[key][key_s]['best_span_str']
                 history_turns[key_s]['prediction']['answer_start'] = predictions[key][key_s]['answer_start']
                 history_turns[key_s]['prediction']['answer_end'] = predictions[key][key_s]['answer_end']
-                history_turns[key_s]['question'] = predictions[key][key_s]['question_answer_string']
+                history_turns[key_s]['question_answer_string'] = predictions[key][key_s]['question_answer_string']
+                history_turns[key_s]['history_span_path'] = predictions[key][key_s]['history_span_path']
         # import ipdb; ipdb.set_trace()
         
         all_examples.extend(examples)

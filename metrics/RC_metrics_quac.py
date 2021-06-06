@@ -403,7 +403,7 @@ def compute_predictions_logits(
         prelim_predictions = sorted(prelim_predictions, key=lambda x: (x.start_logit + x.end_logit), reverse=True)
 
         _NbestPrediction = collections.namedtuple(  # pylint: disable=invalid-name
-            "NbestPrediction", ["text", "start_logit", "end_logit", "answer_start", "answer_end"]
+            "NbestPrediction", ["text", "start_logit", "end_logit", "answer_start", "answer_end", "question_string", "history_span_path"]
         )
 
         seen_predictions = {}
@@ -442,24 +442,25 @@ def compute_predictions_logits(
                 seen_predictions[final_text] = True
                 orig_doc_start = -1
                 orig_doc_end = -1
-
-            nbest.append(_NbestPrediction(text=final_text, start_logit=pred.start_logit, end_logit=pred.end_logit, answer_start=orig_doc_start, answer_end=orig_doc_end))
+            
+            nbest.append(_NbestPrediction(text=final_text, start_logit=pred.start_logit, end_logit=pred.end_logit, answer_start=orig_doc_start, answer_end=orig_doc_end, question_string=getattr(feature,"question_answer_string",""),history_span_path=getattr(feature,"history_span_path",[])))
         # if we didn't include the empty option in the n-best, include it
         if version_2_with_negative:
             if "CANNOTANSWER" not in seen_predictions:
-                nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=null_start_logit, end_logit=null_end_logit, answer_start=-1, answer_end=-1))
+                nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=null_start_logit, end_logit=null_end_logit, answer_start=-1, answer_end=-1,
+                question_string=getattr(feature,"question_answer_string",""), history_span_path=getattr(feature,"history_span_path",[])))
 
             # In very rare edge cases we could only have single null prediction.
             # So we just create a nonce prediction in this case to avoid failure.
             if len(nbest) == 1:
                 for _ in range(beam_search):
-                    nbest.insert(0, _NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0, answer_start=-1, answer_end=-1))
+                    nbest.insert(0, _NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0, answer_start=-1, answer_end=-1, question_string=getattr(feature,"question_answer_string",""), history_span_path=getattr(feature,"history_span_path",[])))
 
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
             for _ in range(beam_search):
-                nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0, answer_start=-1, answer_end=-1))
+                nbest.append(_NbestPrediction(text="CANNOTANSWER", start_logit=0.0, end_logit=0.0, answer_start=-1, answer_end=-1, question_string=getattr(feature,"question_answer_string",""), history_span_path=getattr(feature,"history_span_path",[])))
 
         assert len(nbest) >= 1, "No valid predictions"
 
@@ -482,13 +483,15 @@ def compute_predictions_logits(
             output["end_logit"] = entry.end_logit
             output['answer_start'] = entry.answer_start
             output['answer_end'] = entry.answer_end
+            output['question_string'] = entry.question_string
+            output['history_span_path'] = entry.history_span_path
             nbest_json.append(output)
 
         assert len(nbest_json) >= 1, "No valid predictions"
 
         if not version_2_with_negative:
             official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = (nbest_json[0]["text"], "y", "y")
-            all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": nbest_json[0]["text"], "yesno": "y", "followup":"y", "answer_start": nbest_json[0]["answer_start"], "answer_end": nbest_json[0]["answer_end"], "question_answer_string": example.question_text}
+            all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": nbest_json[0]["text"], "yesno": "y", "followup":"y", "answer_start": nbest_json[0]["answer_start"], "answer_end": nbest_json[0]["answer_end"], "question_answer_string":nbest_json[0]['question_string']}
         else:
             if not best_non_null_entry:
                 score_diff = 10
@@ -497,10 +500,22 @@ def compute_predictions_logits(
             scores_diff_json[example.qas_id] = score_diff
             if score_diff > null_score_diff_threshold:
                 official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = ("CANNOTANSWER", "y", "y")
-                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": [ "CANNOTANSWER" for _ in range(beam_search)], "yesno": "y", "followup":"y", "answer_start": [ -1 for _ in range(beam_search)],"answer_end":[ -1 for _ in range(beam_search)], "question_answer_string": example.question_text}
+                best_span_strs = ["CANNOTANSWER"]
+                answer_starts = [-1]
+                answer_ends = [-1]
+                question_answer_strings = [nbest_json[0]['question_string']]
+                history_span_paths = [nbest_json[0]['history_span_path']]
+                for i in range(beam_search-1):
+                    best_span_strs.append(nbest_json[i]['text'])
+                    question_answer_strings.append(nbest_json[i]['question_string'])
+                    answer_starts.append(nbest_json[i]['answer_starts'])
+                    answer_ends.append(nbest_json[i]['answer_ends'])
+                    history_span_paths.append(nbest_json[i]['history_span_path'])
+                    
+                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": best_span_strs, "yesno": "y", "followup":"y", "answer_start": answer_starts,"answer_end":answer_ends, "question_answer_string": question_answer_strings, "history_span_path":history_span_paths}
             else:
                 official_all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = (best_non_null_entry.text, "y", "y")
-                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": [nbest_json[i]['text'] for i in range(beam_search)], "yesno": "y", "followup":"y",  "answer_start": [nbest_json[i]['answer_start'] for i in range(beam_search)], "answer_end":[nbest_json[i]['answer_end'] for i in range(beam_search)], "question_answer_string": example.question_text}
+                all_predictions[example.qas_id.split("_q#")[0]][example.qas_id] = {"best_span_str": [nbest_json[i]['text'] for i in range(beam_search)], "yesno": "y", "followup":"y",  "answer_start": [nbest_json[i]['answer_start'] for i in range(beam_search)], "answer_end":[nbest_json[i]['answer_end'] for i in range(beam_search)], "question_answer_string": [nbest_json[i]['question_string'] for i in range(beam_search)], "history_span_path": [nbest_json[i]['history_span_path'] for i in range(beam_search)]}
 
             all_nbest_json[example.qas_id] = nbest_json
     

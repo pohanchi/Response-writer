@@ -1,4 +1,5 @@
 saved_directory: ../CQAModel/DoQA/Bert_HAE/
 eval_file: ../preprocessing_files/bert/DoQA/diff_decoding/base_test_file_cooking_HAE
 eval_json: ../dataset_local/doqa/downloads/extracted/fbd54edd7b6dab377ff9e01e3d49da6799e7eaca633f57cecf57f0748ee3688f/doqa-v2.1/doqa_dataset/doqa-cooking-test-v2.1.json
-exp_name: eval_hf_bert_cooking_HAE
+exp_name: eval_hf_bert_cooking_HAE_beam3
+beam_search: 3

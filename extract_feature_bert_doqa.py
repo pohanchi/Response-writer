@@ -671,6 +671,8 @@ class RCFeatures:
         is_impossible,
         qas_id: str = None,
         history_span_list=[],
+        question_answer_string="",
+        history_span_path=[],
     ):
         self.input_ids = input_ids
         self.attention_mask = attention_mask
@@ -688,7 +690,8 @@ class RCFeatures:
         self.token_is_max_context = token_is_max_context
         self.tokens = tokens
         self.token_to_orig_map = token_to_orig_map
-
+        self.question_answer_string=question_answer_string
+        self.history_span_path = history_span_path
         self.start_position = start_position
         self.end_position = end_position
         self.is_impossible = is_impossible

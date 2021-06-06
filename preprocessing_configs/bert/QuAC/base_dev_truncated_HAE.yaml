@@ -2,7 +2,7 @@ mode: test
 ratio: 1.0
 is_dev: false
 stride: 128
-seq_length: 384
+seq_length: 512
 is_training: false
 json_path: ../dataset_local/quac/val_v0.2.json
 output_name: ../preprocessing_files/bert/QuAC/base_dev_HAE

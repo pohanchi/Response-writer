@@ -51,7 +51,7 @@ def main():
     model = model.to(config['device'])
 
 
-    results = evaluate(config, eval_config['eval_file'], eval_config['eval_json'], model, tokenizer)
+    results = evaluate(config, eval_config['eval_file'], eval_config['eval_json'], model, tokenizer,eval_config['beam_search'])
 
     record = {}
     for key, value in results.items():

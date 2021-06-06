@@ -1,7 +1,7 @@
 bottleneck_size: 16
 add_cross_attention: False
-exp_name: DoQA_hf_bert_variant22
-epoches: 20
+exp_name: DoQA_hf_bert_variant23-seed42
+epoches: 10
 weight_decay: 0.0
 learning_rate: 0.00003
 warmup_steps: 100
@@ -18,7 +18,7 @@ fp16: False
 max_grad_norm: 10.0
 logging_steps: 200
 save_steps: 200
-output_dir: ../CQAModel/DoQA/Bert_HF_22/
+output_dir: ../CQAModel/DoQA/Bert_HF_23/
 evaluate_during_training: True
 version_2_with_negative: True
 verbose_logging: True
@@ -30,7 +30,7 @@ train_feature_file: ../preprocessing_files/bert/DoQA/base_train_file_cooking_HAE
 eval_feature_file: ../preprocessing_files/bert/DoQA/base_dev_file_cooking_HAE
 eval_json: ../dataset_local/doqa/downloads/extracted/fbd54edd7b6dab377ff9e01e3d49da6799e7eaca633f57cecf57f0748ee3688f/doqa-v2.1/doqa_dataset/doqa-cooking-dev-v2.1.json
 
-model: BERTQA_memory22
+model: BERTQA_memory23
 pretrained_name: bert-base-uncased
 
 model_config:

@@ -93,6 +93,8 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
                 "end_positions": batch[10],
                 "history_starts": batch[14] if len(batch) >= 16 else None,
                 "history_ends": batch[15] if len(batch) >= 16 else None,
+                "future_starts": batch[16] if len(batch) >= 18 else None,
+                "future_ends": batch[17] if len(batch) >= 18 else None,
             }
 
             if train_args['fp16']:

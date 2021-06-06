@@ -22,7 +22,7 @@ output_dir: ../CQAModel/DoQA/Bert_HAE/
 evaluate_during_training: True
 version_2_with_negative: True
 verbose_logging: True
-max_answer_length: 40
+max_answer_length: 30
 n_best_size: 20
 null_score_diff_threshold: 0.0
 do_lower_case: True

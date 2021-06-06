@@ -246,6 +246,7 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
     for path_idx in range(len(example.history_span_list)):
         history_span_modify = []
         for item in example.history_span_list[path_idx]:
+
             if item[0] == -1:
                 continue
             history_start_position = orig_to_tok_index[item[0]]
@@ -430,7 +431,9 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
                     continue
                 else:
                     start_history_position = history_span_modify[index][0] - doc_start + doc_offset
+
                     end_history_position = history_span_modify[index][1] - doc_start + doc_offset
+                    
                     history_in_context.append((start_history_position, end_history_position))
             
             features.append(
@@ -456,6 +459,8 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
                     is_impossible=span_is_impossible,
                     qas_id=example.qas_id,
                     history_span_list=history_in_context,
+                    history_span_path=example.history_span_list[path_idx],
+                    question_answer_string=example.question_text[path_idx],
                 )
             )
 
@@ -634,7 +639,7 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
                     start_history_position = history_span_modify[index][0] - doc_start + doc_offset
                     end_history_position = history_span_modify[index][1] - doc_start + doc_offset
                     history_in_context.append((start_history_position, end_history_position))
-            
+
             features.append(
                 RCFeatures(
                     span["input_ids"],
@@ -658,6 +663,8 @@ def convert_example_to_features(example, tokenizer, doc_stride, padding_strategy
                     is_impossible=span_is_impossible,
                     qas_id=example.qas_id,
                     history_span_list=history_in_context,
+                    question_answer_string=example.question_text[0],
+                    history_span_path=[]
                 )
             )
     return features
@@ -759,11 +766,11 @@ class RCExample:
         self.doc_tokens = doc_tokens
         self.char_to_word_offset = char_to_word_offset
         self.history_span_list = []
-        # if len(self.history_origin):
-        #     if len(self.history_origin[0]) > 1:
-        #         import ipdb; ipdb.set_trace() 
-        # try:
+
+
+
         for i in range(len(self.history_origin)):
+
             temp = []
             for j in range(len(self.history_origin[i])):
                 if self.history_origin[i][j][2] == "CANNOTANSWER":
@@ -774,8 +781,6 @@ class RCExample:
                     end_position_history = self.history_origin[i][j][1]
                 temp.append([start_position_history, end_position_history, self.history_origin[i][j][2]])
             self.history_span_list.append(temp)
-        # except:
-        #     import ipdb; ipdb.set_trace()        
         # Start and end positions only has a value during evaluation.
         if start_position_character is not None and not is_impossible:
             self.start_position = char_to_word_offset[start_position_character]
@@ -863,36 +868,32 @@ def convert_datalist_to_examples(dataset, history_dict=None, beam_search=1):
             previous = eval(num)
             history_span_choice_list = []
 
-            for prev_idx in range(previous):
-                temp = []
-                answer_start = history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_start'] 
-                answer_end = history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['answer_end']
-                answer_text = history_dict[doc_id+"_q#"+str(prev_idx)]['prediction']['text']
+            prev_history_span_path_list = history_dict[doc_id+"_q#"+str(previous-1)]['history_span_path']
+            answer_start = history_dict[doc_id+"_q#"+str(previous-1)]['prediction']['answer_start'] 
+            answer_end = history_dict[doc_id+"_q#"+str(previous-1)]['prediction']['answer_end']
+            answer_text = history_dict[doc_id+"_q#"+str(previous-1)]['prediction']['text']
 
-                if len(history_span_choice_list) == 0:
-                    if beam_search == 1:
-                        temp.append([[answer_start[0],answer_end[0], answer_text[0]]])
-                    else:
-                        for beam_id in range(beam_search):
-                            temp.append([[answer_start[beam_id],answer_end[beam_id], answer_text[beam_id]]])
+            for beam_id in range(beam_search):
+                if len(prev_history_span_path_list[beam_id]) == 0:
+                    history_span_choice_list.append([[answer_start[beam_id], answer_end[beam_id], answer_text[beam_id]]])
                 else:
-                    for each_set in history_span_choice_list:
-                        if beam_search == 1:
-                            temp.append([each_set[0], [answer_start[0], answer_end[0], answer_text[0]]])
-                        else:
+                    temp = []
+                    for i in range(len(prev_history_span_path_list[beam_id])):
+                        temp.append(prev_history_span_path_list[beam_id][i])
+                    temp.append([answer_start[beam_id], answer_end[beam_id], answer_text[beam_id]])
+                    history_span_choice_list.append(temp)
 
-                            for beam_id in range(beam_search):
-                                temp.append([each_set[0], [answer_start[beam_id], answer_end[beam_id], answer_text[beam_id]]])
-                history_span_choice_list = temp
-            prev_q_list = history_dict[doc_id+"_q#"+str(previous-1)]['question']
+            # if previous > 1:
+            #     import ipdb; ipdb.set_trace()
+
+            prev_q_list = history_dict[doc_id+"_q#"+str(previous-1)]['question_answer_string']
             prev_ans_list = history_dict[doc_id+"_q#"+str(previous-1)]['prediction']['text']
             question_text = []
 
-            for index in range(len(prev_q_list)):
-                for beam_id in range(beam_search):
-                    question = prev_q_list[index][:-5] + " " + prev_ans_list[beam_id] + " " +"[SEP]" + " "
-                    question = question + data['question'] + " [SEP]"
-                    question_text.append(question)
+            for beam_id in range(beam_search):
+                question = prev_q_list[beam_id][:-5] + " " + prev_ans_list[beam_id] + " " +"[SEP]" + " "
+                question = question + data['question'] + " [SEP]"
+                question_text.append(question)
 
             dialog_act = 1
         else:
@@ -964,6 +965,8 @@ class RCFeatures:
         is_impossible,
         qas_id: str = None,
         history_span_list=[],
+        question_answer_string="",
+        history_span_path=[],
     ):
         self.input_ids = input_ids
         self.attention_mask = attention_mask
@@ -981,6 +984,8 @@ class RCFeatures:
         self.token_is_max_context = token_is_max_context
         self.tokens = tokens
         self.token_to_orig_map = token_to_orig_map
+        self.question_answer_string=question_answer_string
+        self.history_span_path = history_span_path
 
         self.start_position = start_position
         self.end_position = end_position

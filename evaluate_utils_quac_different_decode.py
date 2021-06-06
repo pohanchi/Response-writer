@@ -9,7 +9,7 @@ from metrics.quac_metrics import *
 from utils import *
 
 
-def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
+def evaluate(train_args, eval_file, eval_json, model, tokenizer, beam_search, prefix=""):
     preprocess= torch.load(eval_file)
     example_dict = preprocess['example_dict']
 
@@ -27,7 +27,7 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
 
         subset_dataset = example_dict[key]
 
-        examples = convert_datalist_to_examples(subset_dataset, history_turns)
+        examples = convert_datalist_to_examples(subset_dataset, history_turns, beam_search)
 
         # if turn_ids == 2:
         #     import ipdb; ipdb.set_trace()
@@ -116,6 +116,7 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
             train_args['version_2_with_negative'],
             train_args['null_score_diff_threshold'],
             tokenizer,
+            beam_search,
         )
 
         key_set = list(predictions.keys())
@@ -127,8 +128,9 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
                 history_turns[key_s]['prediction']['text'] = predictions[key][key_s]['best_span_str']
                 history_turns[key_s]['prediction']['answer_start'] = predictions[key][key_s]['answer_start']
                 history_turns[key_s]['prediction']['answer_end'] = predictions[key][key_s]['answer_end']
-                history_turns[key_s]['question'] = predictions[key][key_s]['question_answer_string']
-        # import ipdb; ipdb.set_trace()
+                history_turns[key_s]['question_answer_string'] = predictions[key][key_s]['question_answer_string']
+                history_turns[key_s]['history_span_path'] = predictions[key][key_s]['history_span_path']
+
         all_examples.extend(examples)
     print('after aggregate all history turn, decode in the final')
     features, dataset = convert_examples_to_features(all_examples, tokenizer=tokenizer, doc_stride=128, max_seq_length=512, is_training=False)
@@ -212,6 +214,7 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
         train_args['version_2_with_negative'],
         train_args['null_score_diff_threshold'],
         tokenizer,
+        beam_search,
     )
 
     val = json.load(open(eval_json, 'r'))['data']
