@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Subset
 from utils import set_seed
 from optimizer_utils import *
-from extract_feature_coqa import *
+from extract_feature_bert_coqa_truncated import *
 from evaluate_utils_coqa import *
 
 
@@ -29,11 +29,11 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
 
     optimizer_grouped_parameters = [
         {
-            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if ("memory_module" in n or "dialog" in n or "embeddings" in n)],
-            "weight_decay": train_args['weight_decay'],
+            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if not any( nd in n for nd in no_decay)],
+            "weight_decay": 0.01,
         },
                 {
-            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if ("memory_module" not in n and "dialog" not in n and "embeddings" not in n)],
+            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if any( nd in n for nd in no_decay)],
             "weight_decay": train_args['weight_decay'],
         },
     ]
@@ -86,13 +86,13 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
                 "c_att_masks": batch[1],
                 "c_len": batch[2],
                 "q_ids": batch[3],
-                "q_segs":batch[4],
-                "q_att_masks": batch[5],
                 "q_len": batch[6],
                 "q_start": batch[7],
                 "dialog_act": batch[8],
                 "start_positions":batch[9],
                 "end_positions": batch[10],
+                "history_starts": batch[14] if len(batch) >= 16 else None,
+                "history_ends": batch[15] if len(batch) >= 16 else None,
             }
 
             if train_args['fp16']:

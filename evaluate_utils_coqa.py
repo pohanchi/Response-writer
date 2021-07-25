@@ -3,7 +3,7 @@ import os
 import logging
 import timeit
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler,SubsetRandomSampler
-from extract_feature_coqa import *
+from extract_feature_bert_coqa_truncated import *
 from metrics.RC_metrics_coqa import *
 from utils import *
 from metrics.coqa_metrics import *
@@ -56,14 +56,15 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
                 "q_start": batch[7],
                 "dialog_act": batch[8],
                 "start_positions":None,
-                "end_positions": None
+                "end_positions": None,
+                "history_starts": batch[12] if len(batch) >= 14 else None,
+                "history_ends": batch[13] if len(batch) >= 14 else None,
             }
 
 
             feature_indices = batch[11]
 
             # XLNet and XLM use more arguments for their predictions
-
             outputs = model(**inputs)
 
         for i, feature_index in enumerate(feature_indices):
@@ -90,7 +91,7 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
     else:
         output_null_log_odds_file = None
 
-    predictions = compute_predictions_logits(
+    predictions, _ = compute_predictions_logits(
         examples,
         features,
         all_results,

@@ -1,0 +1,7 @@
+domain: "movies"
+mode: "test"
+model_name: bert-base-uncased
+is_dev: false
+is_training: false
+ratio: 1
+output_name: ../preprocessing_files/bert/DoQA/base_test_file_movies_HAE

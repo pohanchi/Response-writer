@@ -9,11 +9,11 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Subset
 from utils import set_seed
 from optimizer_utils import *
-from extract_feature import *
+from extract_feature_bert_doqa import *
 from evaluate_utils import *
 
 
-def train(model, cache_train_file, cache_validation_file, train_args, tokenizer, wandb):
+def train(model, cache_train_file, cache_validation_file, eval_json, train_args, tokenizer, wandb, cache_dev_file=None, **kwargs):
 
     model = model.to(train_args['device'])
     # wandb.watch(model)
@@ -30,31 +30,19 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
 
     optimizer_grouped_parameters = [
         {
-            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if ("memory_module" in n or "dialog" in n or "embeddings" in n)],
-            "weight_decay": train_args['weight_decay'],
+            "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if not any( nd in n for nd in no_decay)],
+            "weight_decay": 0.01,
         },
-                {
-            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if ("memory_module" not in n and "dialog" not in n and "embeddings" not in n)],
-            "weight_decay": train_args['weight_decay'],
+        {
+            "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if any( nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
         },
     ]
-
-    # IPython.embed()
-    # pdb.set_trace()
-    
-    # optimizer_grouped_parameters = [
-    #     {
-    #         "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-    #         "weight_decay": train_args['weight_decay'],
-    #     },
-    #     {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
-    # ]
-
     
     optimizer = AdamW(optimizer_grouped_parameters, betas=(train_args['adam_beta1'],train_args["adam_beta2"]),lr=train_args['learning_rate'], eps=train_args['adam_epsilon'])
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps=train_args['warmup_steps'], num_training_steps=t_total
-    )
+    # scheduler = get_linear_schedule_with_warmup(
+    #    optimizer, num_warmup_steps=train_args['warmup_steps'], num_training_steps=t_total
+    # )
 
     # Train!
     logger.info("***** Running training *****")
@@ -84,7 +72,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
     BEST_STEP = np.array([0])
 
     for _ in train_iterator:
-        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=train_args['local_rank'] not in [-1, 0])
+        epoch_iterator = tqdm(train_dataloader, dynamic_ncols=True, desc="Iteration", disable=train_args['local_rank'] not in [-1, 0], )
         for step, batch in enumerate(epoch_iterator):
 
             model.train()
@@ -95,13 +83,17 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                 "c_att_masks": batch[1],
                 "c_len": batch[2],
                 "q_ids": batch[3],
-                "q_segs":batch[4],
-                "q_att_masks": batch[5],
                 "q_len": batch[6],
                 "q_start": batch[7],
                 "dialog_act": batch[8],
                 "start_positions":batch[9],
                 "end_positions": batch[10],
+                "history_starts": batch[15] if len(batch) >= 17 else None,
+                "history_ends": batch[16] if len(batch) >= 17 else None,
+                "future_starts": batch[17] if len(batch) >= 19 else None,
+                "future_ends": batch[18] if len(batch) >= 19 else None,
+                "future_q":batch[19] if len(batch) >= 21 else None,
+                "future_att":batch[20] if len(batch) >= 21 else None,
             }
 
             outputs = model(**inputs)
@@ -128,7 +120,7 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                     torch.nn.utils.clip_grad_norm_(model.parameters(), train_args['max_grad_norm'])
 
                 optimizer.step()
-                scheduler.step()  # Update learning rate schedule
+                # scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
 
@@ -136,11 +128,19 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                 if train_args['local_rank'] in [-1, 0] and train_args['logging_steps'] > 0 and global_step % train_args['logging_steps'] == 0:
                     # Only evaluate when single GPU otherwise metrics may not average well
                     record = {}
+                    record_train = {}
                     if train_args['local_rank'] == -1 and train_args['evaluate_during_training']:
-                        results = evaluate(train_args, cache_validation_file, model, tokenizer)
+                        if cache_dev_file is not None:
+                            results_dev = evaluate(train_args, cache_dev_file, eval_json, model, tokenizer)
+                            for key, value in results_dev.items():
+                                record_train["train_{}".format(key)] = value
+                            wandb.log(record_train, step=global_step)
+                            print("training_F1_EM result: ",record_train)
+
+                        results = evaluate(train_args, cache_validation_file, eval_json, model, tokenizer)
                         for key, value in results.items():
                             record["eval_{}".format(key)] = value
-                    record["lr"]=scheduler.get_last_lr()[0]
+                    # record["lr"]=scheduler.get_last_lr()[0]
                     record["loss"] = (tr_loss - logging_loss) / train_args['logging_steps']
                     logging_loss = tr_loss
                     wandb.log(record,step=global_step)
@@ -175,5 +175,5 @@ def train(model, cache_train_file, cache_validation_file, train_args, tokenizer,
                             logger.info("Saving model checkpoint to %s", output_dir)
                             json.dump(record, open(json_file, "w"), indent=4)
                             torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
-                            torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
+                            # torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
                             logger.info("Saving optimizer and scheduler states to %s", output_dir)

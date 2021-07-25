@@ -4,12 +4,16 @@ import argparse
 import yaml
 import wandb
 import transformers
-from module import BERTQA_initial, BERTQA_memory, BERTQA
+from module import BERTQA_initial, BERTQA_memory, BERTQA, BERTQA_memoryreuse, \
+                   BERTQA_memory3, BERTQA_memory4, BERTQA_memory5, BERTQA_memory6, \
+                   BERTQA_memoryHistory, BERTQA_memory10, BERTQA_memory11, BERTQA_memory12, BERTQA_memory115, BERTQA_memory13, BERTQA_memory14, BERTQA_memory15, BERTQA_memory16, \
+                   BERTQA_memory17, BERTQA_memory18, BERTQA_memory_HAE, BERTQA_memory20, BERTQA_memory21, BERTQA_memory22, BERTQA_memory23, BERTQA_original, BERTQA_memory23_future, BERTQA_memory23_question, BERTQA_future, BERTQA_memory_HAE_future, BERTQA_memoryHistory_future, BERTQA_question, BERTQA_memory_HAE_question, BERTQA_memoryHistory_question, BERTQA_memory23_switch
+                   
 from module import ALBERTQA_memory, ALBERTQA
 from module import RobertaQA_memory, RobertaQA
 from transformers import BertTokenizer, RobertaTokenizer, AlbertTokenizer
 from train_utils import train
-from extract_feature import *
+from extract_feature_bert_doqa import *
 from utils import *
 
 # os.environ['WANDB_MODE'] = 'dryrun'
@@ -37,7 +41,11 @@ def main():
     config['device'] = torch.device("cuda")
     config['n_gpu'] = torch.cuda.device_count()
 
-    train(model, config['train_feature_file'], config['eval_feature_file'], config, tokenizer, wandb)
+    dev_feature_file = None
+    if config.get("dev_feature_file", None):
+        dev_feature_file = config['dev_feature_file']
+
+    train(model, config['train_feature_file'], config['eval_feature_file'], config['eval_json'], config, tokenizer, wandb, dev_feature_file)
 
 if __name__ == '__main__':
     main()

@@ -1,0 +1,7 @@
+domain: "cooking"
+mode: "validation"
+model_name: bert-base-uncased
+is_dev: False
+is_training: False
+ratio: 1.0
+output_name: ../preprocessing_files/bert/DoQA/future/future_eval/base_dev_file_cooking_HAE

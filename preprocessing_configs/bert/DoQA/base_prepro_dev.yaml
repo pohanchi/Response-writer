@@ -1,9 +1,0 @@
-mode: validation
-ratio: 1.0
-is_dev: false
-stride: 128
-is_training: false
-domain: cooking
-output_name: ./preprocessing_files/bert/DoQA/base_dev
-pretrained_tokenizer: BertTokenizer
-pretrained_name: bert-base-uncased

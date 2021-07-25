@@ -1,6 +1,0 @@
-domain: "cooking"
-mode: "train"
-is_dev: False
-is_training: True
-ratio: 0.9
-output_name: ./bert/sep_doqa/doqa_train_file_cooking

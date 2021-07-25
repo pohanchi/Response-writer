@@ -17,7 +17,8 @@ import math
 import random
 import warnings
 from typing import Dict, List, Optional, Tuple
-
+import IPython
+import pdb
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -136,9 +137,13 @@ def invert_mask(attention_mask):
     return attention_mask.eq(0)
 
 
+def keep_mask(attention_mask):
+    """Turns 1->0, 0->1, False->True, True-> False"""
+    assert attention_mask.dim() == 2
+    return attention_mask.eq(1)
+
 def _prepare_bart_decoder_inputs(
-    config, input_ids, decoder_input_ids=None, decoder_padding_mask=None, causal_mask_dtype=torch.float32
-):
+    config, input_ids, decoder_input_ids=None, decoder_padding_mask=None, causal_mask_dtype=torch.float32):
     """Prepare masks that ignore padding tokens in the decoder and a causal mask for the decoder if
     none are provided. This mimics the default behavior in fairseq. To override it pass in masks.
     Note: this is not called during generation
@@ -147,16 +152,19 @@ def _prepare_bart_decoder_inputs(
     if decoder_input_ids is None:
         decoder_input_ids = shift_tokens_right(input_ids, pad_token_id)
     bsz, tgt_len = decoder_input_ids.size()
+
     if decoder_padding_mask is None:
         decoder_padding_mask = make_padding_mask(decoder_input_ids, pad_token_id)
     else:
         decoder_padding_mask = invert_mask(decoder_padding_mask)
+
     if decoder_padding_mask is not None and decoder_padding_mask.shape[1] > 1:
         # never mask leading token, even if it is pad
         decoder_padding_mask[:, 0] = decoder_padding_mask[:, 1]
     tmp = fill_with_neg_inf(torch.zeros(tgt_len, tgt_len))
     mask = torch.arange(tmp.size(-1))
     tmp.masked_fill_(mask < (mask + 1).view(tmp.size(-1), 1), 0)
+
     causal_mask = tmp.to(dtype=causal_mask_dtype, device=decoder_input_ids.device)
     return decoder_input_ids, decoder_padding_mask, causal_mask
 
@@ -906,6 +914,7 @@ class BartModel(PretrainedBartModel):
                 decoder_padding_mask=decoder_attention_mask,
                 causal_mask_dtype=self.shared.weight.dtype,
             )
+            causal_mask = None
         else:
             decoder_padding_mask, causal_mask = None, None
 
@@ -1318,7 +1327,7 @@ class BartForQuestionAnswering(PretrainedBartModel):
             output = (
                 start_logits,
                 end_logits,
-            ) + outputs[1:]
+            )
             return ((total_loss,) + output) if total_loss is not None else output
 
         return Seq2SeqQuestionAnsweringModelOutput(
@@ -1332,6 +1341,123 @@ class BartForQuestionAnswering(PretrainedBartModel):
             encoder_hidden_states=outputs.encoder_hidden_states,
             encoder_attentions=outputs.encoder_attentions,
         )
+
+
+
+
+
+@add_start_docstrings(
+    """BART Model with a span classification head on top for extractive question-answering tasks like SQuAD (a linear layer on top of
+    the hidden-states output to compute `span start logits` and `span end logits`). """,
+    BART_START_DOCSTRING,
+)
+class BartForQuestionAnsweringMy(PretrainedBartModel):
+    def __init__(self, config):
+        super().__init__(config)
+
+        config.num_labels = 2
+        self.num_labels = config.num_labels
+
+        self.model = BartModel(config)
+        self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
+
+        self.model._init_weights(self.qa_outputs)
+
+    @add_start_docstrings_to_callable(BART_INPUTS_DOCSTRING)
+    @add_code_sample_docstrings(
+        tokenizer_class=_TOKENIZER_FOR_DOC,
+        checkpoint="facebook/bart-large",
+        output_type=Seq2SeqQuestionAnsweringModelOutput,
+        config_class=_CONFIG_FOR_DOC,
+    )
+    def forward(
+        self,
+        input_ids,
+        attention_mask=None,
+        encoder_outputs=None,
+        decoder_input_ids=None,
+        decoder_attention_mask=None,
+        start_positions=None,
+        end_positions=None,
+        use_cache=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        r"""
+        start_positions (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
+            Labels for position (index) of the start of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`).
+            Position outside of the sequence are not taken into account for computing the loss.
+        end_positions (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
+            Labels for position (index) of the end of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`).
+            Position outside of the sequence are not taken into account for computing the loss.
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        # if start_positions is not None and end_positions is not None:
+        use_cache = False
+
+        outputs = self.model(
+            input_ids,
+            attention_mask=attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask,
+            encoder_outputs=encoder_outputs,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        sequence_output = outputs[0]
+
+
+
+        logits = self.qa_outputs(sequence_output)
+        start_logits, end_logits = logits.split(1, dim=-1)
+        start_logits = start_logits.squeeze(-1)
+        end_logits = end_logits.squeeze(-1)
+
+        total_loss = None
+        if start_positions is not None and end_positions is not None:
+            # If we are on multi-GPU, split add a dimension
+            if len(start_positions.size()) > 1:
+                start_positions = start_positions.squeeze(-1)
+            if len(end_positions.size()) > 1:
+                end_positions = end_positions.squeeze(-1)
+            # sometimes the start/end positions are outside our model inputs, we ignore these terms
+            ignored_index = start_logits.size(1)
+            start_positions.clamp_(0, ignored_index)
+            end_positions.clamp_(0, ignored_index)
+
+            loss_fct = CrossEntropyLoss(ignore_index=ignored_index)
+            start_loss = loss_fct(start_logits, start_positions)
+            end_loss = loss_fct(end_logits, end_positions)
+            total_loss = (start_loss + end_loss) / 2
+
+        if not return_dict:
+            output = (
+                start_logits,
+                end_logits,
+            )
+            return ((total_loss,) + output) if total_loss is not None else output
+
+        return Seq2SeqQuestionAnsweringModelOutput(
+            loss=total_loss,
+            start_logits=start_logits,
+            end_logits=end_logits,
+            past_key_values=outputs.past_key_values,
+            decoder_hidden_states=outputs.decoder_hidden_states,
+            decoder_attentions=outputs.decoder_attentions,
+            encoder_last_hidden_state=outputs.encoder_last_hidden_state,
+            encoder_hidden_states=outputs.encoder_hidden_states,
+            encoder_attentions=outputs.encoder_attentions,
+        )
+
+
+
+
 
 
 class SinusoidalPositionalEmbedding(nn.Embedding):

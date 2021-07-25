@@ -1,0 +1,5 @@
+saved_directory: ../CQAModel/QuAC/Bert-base-HAE/
+eval_file: ../preprocessing_files/bert/QuAC/diff_decoding/base_dev_HAE
+eval_json: ../dataset_local/quac/val_v0.2.json
+exp_name: eval_bert_HAE_quac_beam3
+beam_search: 3

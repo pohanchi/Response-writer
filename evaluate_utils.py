@@ -3,15 +3,15 @@ import os
 import logging
 import timeit
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler,SubsetRandomSampler
-from extract_feature import *
-from metrics.RC_metrics import *
+from extract_feature_bert_doqa import *
+from metrics.RC_metrics_quac import *
+from metrics.quac_metrics import *
 from utils import *
-
 import IPython
 import pdb
 
 
-def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
+def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
     
     preprocess= torch.load(eval_file)
     features, dataset, examples = preprocess['features'], preprocess['dataset'], preprocess['examples']
@@ -38,12 +38,12 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
     all_results = []
     start_time = timeit.default_timer()
 
-    for batch in tqdm(eval_dataloader, desc="Evaluating"):
+    for batch in tqdm(eval_dataloader, desc="Evaluating", dynamic_ncols=True):
         model.eval()
         batch = tuple(t.to(train_args['device']) for t in batch)
 
         with torch.no_grad():
-
+            
             inputs = {
                 "c_ids": batch[0],
                 "c_att_masks": batch[1],
@@ -56,20 +56,23 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
                 "dialog_act": batch[8],
                 "start_positions":None,
                 "end_positions": None,
+                "history_starts":batch[12] if len(batch) >= 14 else None,
+                "history_ends": batch[13] if len(batch) >= 14 else None,
+                "future_starts":batch[14] if len(batch) >= 16 else None,
+                "future_ends": batch[15] if len(batch) >= 16 else None,
+                "future_q":batch[16] if len(batch) >= 18 else None,
+                "future_att":batch[17] if len(batch) >= 18 else None,
             }
-
 
             feature_indices = batch[11]
 
             # XLNet and XLM use more arguments for their predictions
-
             outputs = model(**inputs)
 
         for i, feature_index in enumerate(feature_indices):
 
             eval_feature = features[feature_index.item()]
             unique_id = int(eval_feature.unique_id)
-
             output = [to_list(output[i]) for output in outputs]
 
 
@@ -91,7 +94,7 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
     else:
         output_null_log_odds_file = None
 
-    predictions = compute_predictions_logits(
+    predictions, official_all_predictions = compute_predictions_logits(
         examples,
         features,
         all_results,
@@ -106,7 +109,14 @@ def evaluate(train_args, eval_file, model, tokenizer, prefix=""):
         train_args['null_score_diff_threshold'],
         tokenizer,
     )
+    val = json.load(open(eval_json, 'r'))['data']
+    
+    metric_json = eval_fn(val, official_all_predictions, False)
+
+    output_metrics_file = os.path.join(train_args['output_dir'], "metrics.json".format(prefix))
+
+    with open(output_metrics_file, 'w') as fout:
+      json.dump(metric_json, fout)
 
     # Compute the F1 and exact scores.
-    results = RC_evaluate(examples, predictions)
-    return results
+    return metric_json

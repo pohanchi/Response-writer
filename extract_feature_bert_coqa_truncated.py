@@ -13,6 +13,8 @@ import random
 import re
 import time
 import string
+import os
+import pickle
 import torch_optimizer as optim
 import torch.nn.functional as F
 from utils import logging
@@ -24,11 +26,14 @@ from tqdm import trange
 from collections import Counter
 import spacy
 import unicodedata
-logger = logging
-
+import argparse
 import torch
+import yaml
 from torch.utils.data import TensorDataset
 from tqdm import tqdm
+
+
+logger = logging
 
 def normalize_text(text):
     return unicodedata.normalize('NFD', text)
@@ -81,27 +86,6 @@ def normalize_answer(s):
         return text.lower()
 
     return white_space_fix(remove_articles(remove_punc(lower(s))))
-
-def find_answer_span(context_span, answer_start, answer_end):
-    if answer_start == -1 and answer_end == -1:
-        return (-1, -1)
-
-    # s_1, t_1 = 0, 0
-    t_start, t_end = 0, 0
-    for token_id, (s, t) in enumerate(context_span):
-        if s <= answer_start:
-            t_start = token_id
-        if t <= answer_end:
-            t_end = token_id
-    
-    t_start = context_span[t_start][0]
-    t_end = context_span[t_end][1]
-        
-    if t_start == -1 or t_end == -1:
-        print(context_span, answer_start, answer_end)
-        return (None, None)
-    else:
-        return (t_start, t_end)
 
 def len_preserved_normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
@@ -259,9 +243,6 @@ def convert_examples_to_features(
             )
         )
 
-    IPython.embed()
-    pdb.set_trace()
-
     new_features = []
     unique_id = 1000000000
     example_index = 0
@@ -292,11 +273,16 @@ def convert_examples_to_features(
         all_cls_index = torch.tensor([f.cls_index for f in features],dtype=torch.long)
         all_p_mask = pad_sequence([torch.tensor(f.p_mask, dtype=torch.float) for f in features],batch_first=True)
         all_is_impossible = torch.tensor([f.is_impossible for f in features],dtype=torch.float)
+        all_history_start = pad_sequence([torch.tensor(f.history_start_list, dtype=torch.long) for f in features], batch_first=True)
+        all_history_end = pad_sequence([torch.tensor(f.history_end_list, dtype=torch.long) for f in features], batch_first=True)
 
         if not is_training:
             all_feature_index = torch.arange(all_input_ids.size(0), dtype=torch.long)
             dataset = TensorDataset(
-                all_input_ids, all_attention_masks, all_context_len, all_question_ids, all_question_seg, all_question_attention_masks,all_question_len,all_question_start,all_dialog_act,  all_cls_index, all_p_mask, all_feature_index
+                all_input_ids, all_attention_masks, all_context_len, all_question_ids, \
+                all_question_seg, all_question_attention_masks, all_question_len, all_question_start, all_dialog_act,\
+                all_cls_index, all_p_mask, all_feature_index, \
+                all_history_start, all_history_end,
             )
         else:
 
@@ -317,6 +303,8 @@ def convert_examples_to_features(
                 all_cls_index,
                 all_p_mask,
                 all_is_impossible,
+                all_history_start,
+                all_history_end,
             )
 
         return features, dataset
@@ -369,6 +357,23 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
 
     spans = []
 
+    history_span_modify = []
+    # handle history answer embedding
+    for item in example.history_span_list:
+        if item[0] == -1:
+            continue
+        history_start_position = orig_to_tok_index[item[0]]
+        if item[1] < len(example.doc_tokens) - 1:
+            history_end_position = orig_to_tok_index[item[1]+1] - 1
+        else:
+            history_end_position = len(all_doc_tokens) - 1
+        
+        (tok_history_start_position, tok_history_end_position) = _improve_answer_span(
+            all_doc_tokens, history_start_position, history_end_position, tokenizer, item[2]
+        )
+        history_span_modify.append([tok_history_start_position, tok_history_end_position])        
+
+
     truncated_query = tokenizer.encode(
         example.question_text, add_special_tokens=False, truncation=False)
 
@@ -412,7 +417,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         tokenizer.max_len - tokenizer.max_len_single_sentence
     )
     sequence_pair_added_tokens = tokenizer.max_len - tokenizer.max_len_sentences_pair
-
+    sequence_added_tokens_cls = 1
     span_doc_tokens = all_doc_tokens
     while len(spans) * doc_stride < len(all_doc_tokens):
 
@@ -430,12 +435,12 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
             truncation=truncation,
             return_token_type_ids=True,
             return_overflowing_tokens=True,
-            stride=max_seq_length - doc_stride - sequence_pair_added_tokens,
+            stride=max_seq_length - doc_stride - sequence_added_tokens,
         )
 
         paragraph_len = min(
             len(all_doc_tokens) - len(spans) * doc_stride,
-            max_seq_length - sequence_pair_added_tokens, 
+            max_seq_length - sequence_added_tokens, 
             )
 
         if tokenizer.pad_token_id in encoded_dict["input_ids"]:
@@ -454,13 +459,13 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
 
         token_to_orig_map = {}
         for i in range(paragraph_len):
-            index = 1 + i
+            index = i + sequence_added_tokens_cls #(different! index = i+sequence_added_tokens)
             token_to_orig_map[index] = tok_to_orig_index[len(spans) * doc_stride + i]
 
         encoded_dict["paragraph_len"] = paragraph_len
         encoded_dict["tokens"] = tokens
         encoded_dict["token_to_orig_map"] = token_to_orig_map
-        encoded_dict["truncated_query_with_special_tokens_length"] = 1
+        encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens_cls # (different! encoded_dict["truncated_query_with_special_tokens_length"] = sequence_added_tokens)
         encoded_dict["token_is_max_context"] = {}
         encoded_dict["start"] = len(spans) * doc_stride
         encoded_dict["length"] = paragraph_len
@@ -494,7 +499,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
         # Original TF implem also keep the classification token (set to 0)
         p_mask = np.ones_like(span["token_type_ids"])
         if tokenizer.padding_side == "right":
-            p_mask[0 :] = 0
+            p_mask[sequence_added_tokens_cls :] = 0  #(different than offficial code (p_mask[sequence_added_tokens :] = 0))
         else:
             p_mask[-len(span["tokens"]) : -(len(truncated_query) + sequence_added_tokens)] = 0
 
@@ -531,10 +536,23 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
                 if tokenizer.padding_side == "left":
                     doc_offset = 0
                 else:
-                    doc_offset = 1
+                    doc_offset = sequence_added_tokens_cls # different! ( doc_offset = sequence_added_tokens)
 
                 start_position = tok_start_position - doc_start + doc_offset
                 end_position = tok_end_position - doc_start + doc_offset
+        
+        history_in_context =[]
+
+        for index in range(len(history_span_modify)):
+            doc_start = span["start"]
+            doc_end = span["start"] + span["length"] - 1
+            doc_offset = sequence_added_tokens_cls
+            if (history_span_modify[index][0] >= doc_start and history_span_modify[index][1] <= doc_end):                
+                history_span_modify[index][0] = history_span_modify[index][0]
+                history_span_modify[index][1] = history_span_modify[index][1]
+                start_history_position = history_span_modify[index][0] - doc_start + doc_offset
+                end_history_position = history_span_modify[index][1] - doc_start + doc_offset
+                history_in_context.append((start_history_position, end_history_position))
         
         features.append(
             RCFeatures(
@@ -558,6 +576,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
                 end_position=end_position,
                 is_impossible=span_is_impossible,
                 qas_id=example.qas_id,
+                history_span_list=history_in_context,
             )
         )
     return features
@@ -627,6 +646,7 @@ class RCExample:
         end_position_character,
         answers=[],
         is_impossible=False,
+        history_span_list=[],
     ):
         self.qas_id = qas_id
         self.question_text = question_text
@@ -635,6 +655,8 @@ class RCExample:
         self.is_impossible = is_impossible
         self.dialog_act = dialog_act
         self.answers = answers
+        self.history_origin = history_span_list
+        # history_span_list = [ (answer_start, answer_end, ans_text) ]
 
         self.start_position, self.end_position = 0, 0
 
@@ -656,13 +678,19 @@ class RCExample:
 
         self.doc_tokens = doc_tokens
         self.char_to_word_offset = char_to_word_offset
-
+        self.history_span_list = []
+        for i in range(len(self.history_origin)):
+            if self.history_origin[i][0] == -1:
+                continue
+            start_position_history = char_to_word_offset[self.history_origin[i][0]]
+            end_position_history = char_to_word_offset[min(self.history_origin[i][1], len(char_to_word_offset)-1)]
+            self.history_span_list.append([start_position_history, end_position_history, self.history_origin[i][2]])
         # Start and end positions only has a value during evaluation.
         if start_position_character is not None and end_position_character is not None and not is_impossible:
             self.start_position = char_to_word_offset[start_position_character]
             self.end_position = char_to_word_offset[min(end_position_character, len(char_to_word_offset)-1)]
 
-def convert_dataset_to_examples(datasets, mode):
+def convert_dataset_to_examples(datasets, mode, history_turn=-1):
     
     examples = []
     
@@ -672,7 +700,7 @@ def convert_dataset_to_examples(datasets, mode):
         start_position_character = None
         answer_text = None
         answers = []
-
+        history_span_list = []
 
         if data["is_impossible"] == True and not data['answers'][0]['text'].lower() == "yes" and not data['answers'][0]['text'].lower() == "no":
             is_impossible = True
@@ -688,9 +716,9 @@ def convert_dataset_to_examples(datasets, mode):
             is_impossible = False
             answer = data['answers'][0]
             answer_text = answer['text']
-            start_position_character = answer['answer_start']
-            end_position_character = answer['answer_end']
-            answers = data["answers"]
+        start_position_character = answer['answer_start']
+        end_position_character = answer['answer_end']
+        answers = data["answers"]
 
         num = data['id'].split("#")[-1]
 
@@ -701,15 +729,18 @@ def convert_dataset_to_examples(datasets, mode):
             for i in range(previous,1,1):
                 history = datasets[mode][index+i]
                 if i !=0:
-                    question = question + pre_proc(history['question']) + " " + history['answers'][0]['gold_ans'] + " " +"[SEP]" + " "
+                    if history_turn >0:
+                        if i >= -history_turn:
+                            history_span_list.append([history['answers'][0]['answer_start'], history['answers'][0]['answer_end'], history['answers'][0]['text']])
+                            question = question + history['question'] + " " + history['answers'][0]['gold_ans'] + " " +"[SEP]" + " "
+                    else:
+                        history_span_list.append([history['answers'][0]['answer_start'], history['answers'][0]['answer_end'], history['answers'][0]['text']])
+                        question = question + history['question'] + " " + history['answers'][0]['gold_ans'] + " " +"[SEP]" + " "
                 else:
-                    question = question + pre_proc(history['question']) + " " +"[SEP]"
+                    question = question + history['question'] + " " +"[SEP]"
             
         else:
-            question  = question + pre_proc(data['question']) + " [SEP]"
-
-        # IPython.embed()
-        # pdb.set_trace()
+            question  = question + data['question'] + " [SEP]"
 
         dialog_act = data['dialog_act']
 
@@ -721,7 +752,8 @@ def convert_dataset_to_examples(datasets, mode):
                             start_position_character=start_position_character, 
                             end_position_character=end_position_character,
                             is_impossible=is_impossible,
-                            answers=answers)
+                            answers=answers,
+                            history_span_list=history_span_list)
     
         examples.append(example)
 
@@ -773,6 +805,7 @@ class RCFeatures:
         end_position,
         is_impossible,
         qas_id: str = None,
+        history_span_list=[]
     ):
         self.input_ids = input_ids
         self.attention_mask = attention_mask
@@ -795,6 +828,15 @@ class RCFeatures:
         self.end_position = end_position
         self.is_impossible = is_impossible
         self.qas_id = qas_id
+        
+        self.history_start_list = []
+        self.history_end_list = []
+        
+        for item in history_span_list:
+            self.history_start_list.append(item[0])
+            self.history_end_list.append(item[1])
+        
+
 
 class RCResult:
     """
@@ -828,69 +870,80 @@ def extract_and_save_feature(dataset_dict, mode, tokenizer, is_training, name):
 
 if __name__ == '__main__':
 
-    mode = "test"
-    name = "coqa/coqa-dev-v1.0.json"
-    is_training = False
-    is_dev = False
-    dataset_raw = []
-    max_seq_length = 384
-    stride = 128
-    ratio = 1
-    cached_features_file = "preprocessing_files/bert/CoQA/dev_clean_truncated"
+    parser = argparse.ArgumentParser(description="argument parser for HistoryQA project")
+    parser.add_argument("--config")
+    args = parser.parse_args()
+    config = yaml.safe_load(open(args.config, "r"))
+
+    mode = config['mode']
+    json_file = config['json_file']
+    is_training = config['is_training']
+    is_dev = config['is_dev']
+    stride = config['stride']
+    max_seq_length = config['max_seq_length']
+    ratio = config['ratio']
+    cached_features_file = config['cache_features_file']
+    model_name = config['model_name']
     
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased") 
-    data = json.load(open(name))['data']
+    tokenizer = BertTokenizer.from_pretrained(model_name) 
+    data = json.load(open(json_file))['data']
     dataset_dict = {mode:None}
-
-
     nlp = spacy.load("en", disable=['parser'])
 
-    # preprocess data 
-    for pa_pairs in tqdm(data):
-        # remove redundant character to stablize extracting feature
-        story = pa_pairs['story']
-        context = [pre_proc(story)]
-        doc = [context for context in nlp.pipe(context)][0]
-        unnormed_tokens = [w.text for w in doc]
+    dataset_raw = []
+    
+    if os.path.exists(f"../dataset_local/coqa/dump_complete_{mode}.p"):
+        print(f"load preload datset from ../dataset_local/coqa/dump_complete_{mode}.p")
+        dataset_dict = pickle.load(open(f"../dataset_local/coqa/dump_complete_{mode}.p","rb"))
+    else:
+        print("file not exist, create a pickle file to preload in the next time ..")
+        # preprocess data 
+        for pa_pairs in tqdm(data):
+            # remove redundant character to stablize extracting feature
+            # story = pa_pairs['story']
+            # context = [pre_proc(story)]
+            # doc = [context for context in nlp.pipe(context)][0]
+            # unnormed_tokens = [w.text for w in doc]
+            paragraph_text = pa_pairs['story']
 
-        for idx in range(len(pa_pairs['questions'])):
+            for idx in range(len(pa_pairs['questions'])):
 
-            data_pair = {}
-            data_pair['question'] = pa_pairs['questions'][idx]['input_text']
-            data_pair['id'] = pa_pairs['id'] + "_q#" + str(pa_pairs['questions'][idx]['turn_id']-1)
-            data_pair['is_impossible'] = False
+                data_pair = {}
+                data_pair['question'] = pa_pairs['questions'][idx]['input_text']
+                data_pair['id'] = pa_pairs['id'] + "_q#" + str(pa_pairs['questions'][idx]['turn_id']-1)
+                data_pair['is_impossible'] = False
 
-            if pa_pairs['answers'][idx]['span_text'] != "unknown":
+                if pa_pairs['answers'][idx]['span_text'] != "unknown":
 
-                if pa_pairs['answers'][idx]['input_text'].lower() == "yes" or pa_pairs['answers'][idx]['input_text'].lower() == "no":
-                    data_pair['dialog_act'] = 1 if  pa_pairs['answers'][idx]['input_text'].lower() == "yes" else 2
-                    data_pair['is_impossible'] = True
-                    data_pair['answers'] = [{'text':pa_pairs['answers'][idx]['input_text'], 'answer_start':-1, 'answer_end':-1, 'gold_ans':pa_pairs['answers'][idx]['input_text'].lower()}]
+                    if pa_pairs['answers'][idx]['input_text'].lower() == "yes" or pa_pairs['answers'][idx]['input_text'].lower() == "no":
+                        data_pair['dialog_act'] = 1 if  pa_pairs['answers'][idx]['input_text'].lower() == "yes" else 2
+                        data_pair['is_impossible'] = True
+                        data_pair['answers'] = [{'text':pa_pairs['answers'][idx]['input_text'], 'answer_start':-1, 'answer_end':-1, 'gold_ans':pa_pairs['answers'][idx]['input_text'].lower()}]
 
+                    else:
+                        data_pair['dialog_act'] = 3
+                        # answer, char_i_span, char_j_span = free_text_to_span(pa_pairs['answers'][idx]['span_text'], paragraph_text)
+                        answer, char_i, char_j = free_text_to_span(pa_pairs['answers'][idx]['input_text'] ,pa_pairs['answers'][idx]['span_text'])
+
+                        ans_start =char_i + pa_pairs['answers'][idx]['span_start']
+                        ans_end =char_j + pa_pairs['answers'][idx]['span_start']
+
+                        data_pair['answers'] = [{'text':answer, 'answer_start':int(ans_start), 'answer_end':int(ans_end), 'gold_ans':pa_pairs['answers'][idx]['input_text']}]
                 else:
-                    data_pair['dialog_act'] = 3
-                    answer, char_i_span, char_j_span = free_text_to_span(pre_proc(pa_pairs['answers'][idx]['span_text']), context[0])
-                    answer, char_i, char_j = free_text_to_span(pa_pairs['answers'][idx]['input_text'] ,answer)
 
-                    ans_start =char_i_span + char_i
-                    ans_end =char_j_span + char_j
+                    data_pair['dialog_act'] = 0
+                    data_pair['answers'] = [{'text':"unknown", 'answer_start': -1, 'answer_end':-1,'gold_ans':pa_pairs['answers'][idx]['input_text'].lower()}]
+                    data_pair['is_impossible'] = True
+                
+                data_pair['context'] = paragraph_text
+                dataset_raw.append(deepcopy(data_pair))
+            dataset_dict[mode] = dataset_raw
+            pickle.dump(dataset_dict, open(f"../dataset_local/coqa/dump_complete_{mode}.p","wb"))
 
-                    data_pair['answers'] = [{'text':answer, 'answer_start':int(ans_start), 'answer_end':int(ans_end), 'gold_ans':pa_pairs['answers'][idx]['input_text']}]
-            else:
-
-                data_pair['dialog_act'] = 0
-                data_pair['answers'] = [{'text':"unknown", 'answer_start': -1, 'answer_end':-1,'gold_ans':pa_pairs['answers'][idx]['input_text'].lower()}]
-                data_pair['is_impossible'] = True
-            
-            data_pair['context'] = context[0]
-            dataset_raw.append(deepcopy(data_pair))
-
-    dataset_dict[mode] = dataset_raw
-
-    examples = convert_dataset_to_examples(dataset_dict,mode)
+    examples = convert_dataset_to_examples(dataset_dict,mode, history_turn=config['history_turn'])
 
     if mode == "train":
-        train_sample = ratio * len(examples)
+        train_sample = int(ratio * len(examples))
         if not is_dev:
             examples = examples[:train_sample]
         else:

@@ -4,10 +4,13 @@ import argparse
 import yaml
 import wandb
 import transformers
-from module import BERTQA_memory, BERTQA
+from module import BERTQA_memory, BERTQA, BARTQA, BERTQA_memory3, BERTQA_memory4, BERTQA_memory5, \
+    BERTQA_memory6, BERTQA_memory10, BERTQA_memory11, BERTQA_memory12, BERTQA_memory115, BERTQA_memory13, \
+    BERTQA_memoryHistory, BERTQA_memory14, BERTQA_memory15, BERTQA_memory16, BERTQA_memory17, BERTQA_memory_HAE, BERTQA_memory22, BERTQA_memory23,BERTQA_original, BERTQA_memory23_future, BERTQA_memory23_question, BERTQA_future, BERTQA_memory_HAE_future, BERTQA_memoryHistory_future,BERTQA_question, BERTQA_memory_HAE_question, BERTQA_memoryHistory_question
+
 from transformers import BertTokenizer
 from train_utils_quac import train
-from extract_feature_quac import *
+from extract_feature_bert_quac_truncated import *
 from utils import *
 
 
@@ -26,7 +29,7 @@ def main():
     model= eval(config['model'])(config)
     tokenizer = eval(config["pretrained_tokenizer"]).from_pretrained(config["pretrained_name"])
 
-    wandb.init(project="quac_official_twcc", name=config['exp_name'])
+    wandb.init(project="quac_official_twcc", name=config['exp_name'],settings=wandb.Settings(start_method="fork"))
     wandb.config.update(config)
 
     wandb.watch(model)

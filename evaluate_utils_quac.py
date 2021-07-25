@@ -50,7 +50,11 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
                 "q_start": batch[7],
                 "dialog_act": batch[8],
                 "start_positions":None,
-                "end_positions": None
+                "end_positions": None,
+                "history_starts":batch[12] if len(batch) >= 14 else None,
+                "history_ends": batch[13] if len(batch) >= 14 else None,
+                "future_starts": batch[14] if len(batch) >= 16 else None,
+                "future_ends": batch[15] if len(batch) >= 16 else None,
             }
 
             feature_indices = batch[9]
@@ -109,5 +113,4 @@ def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
       json.dump(metric_json, fout)
 
     # Compute the F1 and exact scores.
-    # results = RC_evaluate(examples, predictions)
     return metric_json

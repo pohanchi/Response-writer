@@ -7,10 +7,16 @@ import wandb
 import IPython
 import pdb
 import transformers
-from module import BERTQA_initial, BERTQA_memory, BERTQA
+
+from module import BERTQA_initial, BERTQA_memory, BERTQA, BERTQA_memoryreuse, \
+    BERTQA_memory3, BERTQA_memory4, BERTQA_memory5, BERTQA_memory6, BERTQA_memory10, BERTQA_memory11, \
+    BERTQA_memory12, BERTQA_memory115, BERTQA_memory13, BERTQA_memory14, BERTQA_memory15, BERTQA_memory16, \
+    BERTQA_memory17, BERTQA_memory18, BERTQA_memory_HAE, BERTQA_memoryHistory, BERTQA_memory20, BERTQA_memory21, BERTQA_memory22, \
+    BERTQA_memory23, BERTQA_original, BERTQA_memory23_future, BERTQA_memory23_question, BERTQA_future, BERTQA_memory_HAE_future, BERTQA_memoryHistory_future, BERTQA_question, BERTQA_memory_HAE_question, BERTQA_memoryHistory_question,BERTQA_memory23_switch
+    
 from transformers import BertTokenizer
 from evaluate_utils import evaluate 
-from extract_feature import *
+from extract_feature_bert_doqa import *
 from utils import *
 
 def main():
@@ -48,7 +54,7 @@ def main():
     model = model.to(config['device'])
 
 
-    results = evaluate(config, eval_config['eval_file'], model, tokenizer)
+    results = evaluate(config, eval_config['eval_file'], eval_config['eval_json'], model, tokenizer)
 
     record = {}
     for key, value in results.items():
