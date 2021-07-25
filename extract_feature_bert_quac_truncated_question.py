@@ -158,6 +158,8 @@ def convert_examples_to_features(
         all_history_end = pad_sequence([torch.tensor(f.history_end_list, dtype=torch.long) for f in features], batch_first=True)
         all_future_start = pad_sequence([torch.tensor(f.future_start_list, dtype=torch.long) for f in features], batch_first=True)
         all_future_end = pad_sequence([torch.tensor(f.future_end_list, dtype=torch.long) for f in features], batch_first=True)
+        all_future_question_ids = pad_sequence([torch.tensor(f.future_question_ids, dtype=torch.long) for f in features],batch_first=True)
+        all_future_question_att = pad_sequence([torch.ones(torch.tensor(f.future_question_ids, dtype=torch.long).size()) for f in features],batch_first=True)
 
 
 
@@ -166,6 +168,8 @@ def convert_examples_to_features(
             dataset = TensorDataset(
                 all_input_ids, all_attention_masks, all_context_len, all_question_ids, all_question_seg, all_question_attention_masks,all_question_len,all_question_start,all_dialog_act,  all_feature_index, all_cls_index, all_p_mask, all_history_start, all_history_end,
                 all_future_start, all_future_end,
+                all_future_question_ids,
+                all_future_question_att,
             )
         else:
 
@@ -190,6 +194,8 @@ def convert_examples_to_features(
                 all_history_end,
                 all_future_start, 
                 all_future_end,
+                all_future_question_ids,
+                all_future_question_att,
             )
 
         return features, dataset
@@ -281,6 +287,8 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
 
     truncated_query = tokenizer.encode(
         example.question_text, add_special_tokens=False, truncation=False)
+    truncated_future_query = tokenizer.encode(
+        example.future_question, add_special_tokens=False, truncation=False)
 
     indexes = np.where(np.array(truncated_query) == 102)
     question_attention_mask = np.ones_like(np.array(truncated_query)).tolist()
@@ -492,6 +500,7 @@ def convert_example_to_features(example, tokenizer, max_seq_length, doc_stride, 
                 qas_id=example.qas_id,
                 history_span_list=history_in_context,
                 future_span_list=future_in_context,
+                future_question_ids=truncated_future_query,
             )
         )
     return features
@@ -562,6 +571,8 @@ class RCExample:
         is_impossible=False,
         history_span_list=[],
         future_span_list=[],
+        future_question_text="[CLS] [SEP]",
+
     ):
         self.qas_id = qas_id
         self.question_text = question_text
@@ -573,6 +584,8 @@ class RCExample:
         self.history_origin = history_span_list
         self.future_origin = future_span_list
         self.start_position, self.end_position = 0, 0
+        self.future_question = future_question_text
+
 
         doc_tokens = []
         char_to_word_offset = []
@@ -651,7 +664,7 @@ def convert_dataset_to_examples(datasets, mode, history_turn=-1):
 
         history_span_list = []
         past_list = []
-
+        future_question = "[CLS] "
         question = "[CLS] "
         if eval(num) != 0:
             previous = -eval(num)
@@ -676,8 +689,11 @@ def convert_dataset_to_examples(datasets, mode, history_turn=-1):
             question  = question + data['question'] + " [SEP]"
             dialog_act = 1
 
-        #handle future answer
-
+        #handle future question
+        if future_label:
+            future_question = future_question + data_future['question'] + " [SEP]"
+        else:
+            future_question = future_question + " [SEP]"
 
         example = RCExample(qas_id=data['id'],
                             question_text=question,
@@ -688,7 +704,8 @@ def convert_dataset_to_examples(datasets, mode, history_turn=-1):
                             is_impossible=is_impossible,
                             answers=answers,
                             history_span_list=history_span_list,
-                            future_span_list=past_list)
+                            future_span_list=past_list,
+                            future_question_text=future_question)
 
         examples.append(example)
 
@@ -739,6 +756,7 @@ class RCFeatures:
         start_position,
         end_position,
         is_impossible,
+        future_question_ids,
         qas_id: str = None,
         history_span_list=[],
         future_span_list=[]
@@ -764,6 +782,8 @@ class RCFeatures:
         self.end_position = end_position
         self.is_impossible = is_impossible
         self.qas_id = qas_id
+        self.future_question_ids = future_question_ids
+
 
         self.history_start_list = []
         self.history_end_list = []

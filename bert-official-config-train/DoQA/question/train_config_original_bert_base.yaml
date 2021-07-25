@@ -1,5 +1,5 @@
 bottleneck_size: 24
-exp_name: DoQA_bert_base_uncased
+exp_name: DoQA_bert_base_uncased_question
 epoches: 20
 weight_decay: 0.0
 learning_rate: 0.00003
@@ -17,7 +17,7 @@ fp16: False
 max_grad_norm: 10.0
 logging_steps: 200
 save_steps: 200
-output_dir: ../CQAModel/DoQA/BERT_future/
+output_dir: ../CQAModel/DoQA/BERT_question/
 evaluate_during_training: True
 version_2_with_negative: True
 verbose_logging: True
@@ -25,11 +25,11 @@ max_answer_length: 30
 n_best_size: 20
 null_score_diff_threshold: 0.0
 do_lower_case: True
-train_feature_file: ../preprocessing_files/bert/DoQA/future/base_train_file_cooking_HAE
-eval_feature_file: ../preprocessing_files/bert/DoQA/future/base_dev_file_cooking_HAE
+train_feature_file: ../preprocessing_files/bert/DoQA/question/base_train_file_cooking_HAE
+eval_feature_file: ../preprocessing_files/bert/DoQA/question/base_dev_file_cooking_HAE
 eval_json: ../dataset_local/doqa/downloads/extracted/fbd54edd7b6dab377ff9e01e3d49da6799e7eaca633f57cecf57f0748ee3688f/doqa-v2.1/doqa_dataset/doqa-cooking-dev-v2.1.json
 
-model: BERTQA
+model: BERTQA_question
 pretrained_name: bert-base-uncased
 
 model_config:
