@@ -5682,13 +5682,7 @@ class BertModelMemory14(BertPreTrainedModel):
             memory_embed_tmp = encoder_outputs_mem[0]
             embedding_output_tmp = encoder_outputs[0]
             if i == 11:
-                # embedding_output_1, _ = self.memory_module(embedding_output_tmp, memory_embed_tmp, memory_len, input_len, 0, extended_attention_mask)
-                # memory_embed_1, _ = self.memory_module(memory_embed_tmp, embedding_output_tmp, input_len, memory_len, 0, extended_memory_attention_mask)
-                # embedding_output_2, _ = self.memory_module(embedding_output_1, memory_embed_1, memory_len, input_len, 0, extended_attention_mask)
-                # memory_embed_2, _ = self.memory_module(memory_embed_1, embedding_output_1, input_len, memory_len, 0, extended_memory_attention_mask)
                 embedding_output, _ = self.memory_module(embedding_output_tmp, memory_embed_tmp, memory_len, input_len, 0, extended_attention_mask)
-                # memory_embed, _ = self.memory_module(memory_embed_2, embedding_output_2, input_len, memory_len, 0, extended_memory_attention_mask)
-
             else:
                 embedding_output = embedding_output_tmp
                 memory_embed = memory_embed_tmp
