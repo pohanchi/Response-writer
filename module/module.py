@@ -3,7 +3,8 @@ import numpy as np
 import torch.nn as nn
 from transformers import BertModel, BertConfig, \
     BertModelMemory2, BertInjectMemory, \
-    BertModelMemory115, HisBERTModel, BertModelRelativeHAE, BertModelMemory23, BertLMHeadModel
+    BertModelMemory115, HisBERTModel, BertModelRelativeHAE, BertModelMemory23, BertLMHeadModel, \
+    BertModelRelative, # Prepend History QA
 
 from torch.nn.utils.rnn import pad_sequence
 from argparse import Namespace
