@@ -1,7 +1,0 @@
-domain: "cooking"
-mode: "train"
-model_name: bert-base-uncased
-is_dev: False
-is_training: True
-ratio: 1.0
-output_name: ../preprocessing_files/bert/DoQA/future/base_train_file_cooking_HAE

@@ -1,4 +1,0 @@
-saved_directory: ../CQAModel/DoQA/Bert_HAE_question/
-eval_file: ../preprocessing_files/bert/DoQA/question/base_test_file_movies_HAE
-eval_json: ../dataset_local/doqa/downloads/extracted/fbd54edd7b6dab377ff9e01e3d49da6799e7eaca633f57cecf57f0748ee3688f/doqa-v2.1/doqa_dataset/doqa-movies-test-v2.1.json
-exp_name: eval_bert_movies_HAE_question
