@@ -12,9 +12,9 @@ from module import BERTQA_memory, BERTQA, BERTQA_memory_coqa, BERTQA_memory14_co
                    BERTQA_memory17_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, BERTQA_memory18_coqa, BERTQA_memory_HAE_coqa, BERTQA_memory23_coqa
     
 from transformers import BertTokenizer
-from evaluate_utils_coqa_different_decode import evaluate 
-from extract_feature_bert_coqa_truncated_different_decode import *
-from utils import *
+from utils.evaluate_utils_coqa_different_decode import evaluate 
+from extract_feature.extract_feature_bert_coqa_truncated_different_decode import *
+from utils.utils import *
 
 def main():
 

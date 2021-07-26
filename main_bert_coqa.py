@@ -7,8 +7,8 @@ import transformers
 from module import BERTQA_memory, BERTQA, BERTQA_memory_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, BERTQA_memory_HAE_coqa, BERTQA_memory23_coqa, BERTQA_original_coqa
 from transformers import BertTokenizer
 from utils.train_utils_coqa import train
-from extract_feature_coqa import *
-from utils import *
+from extract_feature.extract_feature_bert_coqa_truncated import *
+from utils.utils import *
 
 
 # os.environ['WANDB_MODE'] = 'dryrun'

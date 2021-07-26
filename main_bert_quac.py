@@ -7,9 +7,9 @@ import transformers
 from module import BERTQA_memory, BERTQA, BERTQA_memory115, BERTQA_memoryHistory, BERTQA_memory_HAE, BERTQA_memory23,BERTQA_original
 
 from transformers import BertTokenizer
-from train_utils_quac import train
-from extract_feature_bert_quac_truncated import *
-from utils import *
+from utils.train_utils_quac import train
+from extract_feature.extract_feature_bert_quac_truncated import *
+from utils.utils import *
 
 
 # os.environ['WANDB_MODE'] = 'dryrun'
