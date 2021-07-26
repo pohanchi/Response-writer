@@ -1,24 +1,23 @@
-bottleneck_size: 16
-add_cross_attention: false
-exp_name: DoQAsep_hf_bert_base_uncased_bottleneck_quac_mematt_layer1_on_both_layer12_mem_to_doc
-epoches: 10
+bottleneck_size: 24
+exp_name: DoQA_bert_base_uncased_noq
+epoches: 20
 weight_decay: 0.0
-learning_rate: 0.00005
+learning_rate: 0.00003
 warmup_steps: 1000
-adam_epsilon: 1.0e-12
+adam_epsilon: 1.0e-6
 adam_beta1: 0.9
 adam_beta2: 0.999
 batch_size: 3
-gradient_accumulation_steps: 16
+gradient_accumulation_steps: 4
 local_rank: -1
 seed: 42
 num_labels: 2
 dialog_labels: 2
 fp16: False
-max_grad_norm: 1.0
-logging_steps: 1000
-save_steps: 1000
-output_dir: ../CQAModel/QuAC/Bert-base18_just_layer1_on_both_layer12_mem_to_doc/sep-dev-in_training
+max_grad_norm: 10.0
+logging_steps: 200
+save_steps: 200
+output_dir: ../CQAModel/DoQA/BERT_noq/
 evaluate_during_training: True
 version_2_with_negative: True
 verbose_logging: True
@@ -30,10 +29,8 @@ train_feature_file: ../preprocessing_files/bert/QuAC/base_train_truncated
 eval_feature_file: ../preprocessing_files/bert/QuAC/base_dev_truncated
 eval_json: ../dataset_local/quac/val_v0.2.json
 
-model: BERTQA_memory18
+model: BERTQA_original
 pretrained_name: bert-base-uncased
-pretrained_tokenizer: BertTokenizer
-
 
 model_config:
   pos_att_type: "c2p|p2c"

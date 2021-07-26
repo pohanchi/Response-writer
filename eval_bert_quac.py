@@ -4,10 +4,9 @@ import os
 import argparse
 import yaml
 import wandb
-import IPython
-import pdb
+
 import transformers
-from module import BERTQA_memory, BERTQA, BERTQA_memoryHistory, BERTQA_memory_HAE, BERTQA_memory23,BERTQA_original
+from module import BERTQA_memory, BERTQA, BERTQA_memoryHistory, BERTQA_memory_HAE, BERTQA_HHF, BERTQA_original
 from transformers import BertTokenizer
 from utils.evaluate_utils import evaluate 
 from extract_feature.extract_feature_bert_quac_truncated import *

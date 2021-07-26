@@ -4,16 +4,15 @@ import os
 import argparse
 import yaml
 import wandb
-import IPython
-import pdb
+
 import transformers
 from module import BERTQA_memory, BERTQA, \
-     BERTQA_memory_HAE, BERTQA_memoryHistory, BERTQA_memory23, BERTQA_original
+     BERTQA_memory_HAE, BERTQA_memoryHistory, BERTQA_HHF, BERTQA_original
 
-from transformers import BertTokenizer
-from evaluate_utils_different_decode import evaluate 
-from extract_feature_bert_doqa_different_decode import *
-from utils import *
+from transformers import BertTokenizer, BertConfig
+from utils.evaluate_utils_different_decode import evaluate 
+from extract_feature.extract_feature_bert_doqa_different_decode import *
+from utils.utils import *
 
 def main():
 

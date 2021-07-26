@@ -4,8 +4,7 @@ import os
 import argparse
 import yaml
 import wandb
-import IPython
-import pdb
+
 import transformers
 
 from module import BERTQA_memory_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, BERTQA_memory_HAE_coqa, BERTQA_memory23_coqa, BERTQA_original_coqa

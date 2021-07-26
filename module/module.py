@@ -1000,9 +1000,9 @@ class BERTQA_memoryHistory_coqa(BERTQA_memoryHistory):
         output = (start_logits, end_logits, prediction)
         return ((total_loss,) + output) if total_loss is not None else output
 
-class BERTQA_memory23(nn.Module):
+class BERTQA_HHF(nn.Module):
     def __init__(self, config):
-        super(BERTQA_memory23, self).__init__()
+        super(BERTQA_HHF, self).__init__()
         # interact module over and over again
         #BERT layer, n_dim, nhead
         config = Namespace(**config)
@@ -1171,9 +1171,9 @@ class BERTQA_memory23(nn.Module):
         return ((total_loss,) + output) if total_loss is not None else output
 
 
-class BERTQA_memory23_coqa(BERTQA_memory23):
+class BERTQA_HHF_coqa(BERTQA_HHF):
     def __init__(self, config):
-        super(BERTQA_memory23_coqa, self).__init__(config)
+        super(BERTQA_HHF_coqa, self).__init__(config)
 
         self.dialog_loss_fct = nn.CrossEntropyLoss(ignore_index=-1000)
 
