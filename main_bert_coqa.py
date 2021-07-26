@@ -4,6 +4,7 @@ import argparse
 import yaml
 import wandb
 import transformers
+import module
 from module import BERTQA, BERTQA_memory_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, BERTQA_memory_HAE_coqa, BERTQA_memory23_coqa, BERTQA_original_coqa
 from transformers import BertTokenizer
 from utils.train_utils_coqa import train

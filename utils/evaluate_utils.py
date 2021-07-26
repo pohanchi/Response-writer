@@ -3,10 +3,10 @@ import os
 import logging
 import timeit
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler,SubsetRandomSampler
-from extract_feature_bert_doqa import *
+from extract_feature.extract_feature_bert_doqa import *
 from metrics.RC_metrics_quac import *
 from metrics.quac_metrics import *
-from utils import *
+from utils.utils import *
 import IPython
 import pdb
 
