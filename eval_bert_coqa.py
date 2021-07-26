@@ -8,8 +8,8 @@ import IPython
 import pdb
 import transformers
 
-from module import BERTQA_memory, BERTQA, BERTQA_memory_coqa, BERTQA_memory14_coqa, BERTQA_memory15_coqa, BERTQA_memory16_coqa, \
-                   BERTQA_memory17_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, BERTQA_memory18_coqa, BERTQA_memory_HAE_coqa
+from module import BERTQA_memory, BERTQA, BERTQA_memory_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, BERTQA_memory_HAE_coqa, BERTQA_memory23_coqa, BERTQA_original_coqa
+
 
 from transformers import BertTokenizer
 from evaluate_utils_coqa import evaluate 
@@ -42,7 +42,7 @@ def main():
 
     tokenizer = BertTokenizer.from_pretrained(dir_path)
 
-    wandb.init(project="coqa_normal_deocde_twcc_eval_official", name=eval_config['exp_name'])
+    wandb.init(project="coqa_normal_decode_twcc_eval_official", name=eval_config['exp_name'])
     wandb.config.update(config)
 
     config['device'] = torch.device("cuda")
