@@ -9,8 +9,8 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Subset
 from utils import set_seed
 from optimizer_utils import *
-from extract_feature_quac import *
-from evaluate_utils_quac import *
+from extract_feature.extract_feature_bert_coqa_truncated import *
+from evaluate_utils_coqa import *
 
 
 def train(model, cache_train_file, cache_validation_file, eval_json, train_args, tokenizer, wandb):
@@ -29,12 +29,12 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
 
     optimizer_grouped_parameters = [
         {
-            "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if not any( nd in n for nd in no_decay) ],
+            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if not any( nd in n for nd in no_decay)],
             "weight_decay": 0.01,
         },
-        {
-            "lr": train_args['learning_rate'],"params": [p for n, p in model.named_parameters() if any( nd in n for nd in no_decay)],
-            "weight_decay": 0.0,
+                {
+            "lr": train_args['learning_rate']*1.0,"params": [p for n, p in model.named_parameters() if any( nd in n for nd in no_decay)],
+            "weight_decay": train_args['weight_decay'],
         },
     ]
     
@@ -75,7 +75,7 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
 
 
     for _ in train_iterator:
-        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=train_args['local_rank'] not in [-1, 0])
+        epoch_iterator = tqdm(train_dataloader,dynamic_ncols=True,  desc="Iteration", disable=train_args['local_rank'] not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
 
             model.train()
@@ -93,8 +93,6 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
                 "end_positions": batch[10],
                 "history_starts": batch[14] if len(batch) >= 16 else None,
                 "history_ends": batch[15] if len(batch) >= 16 else None,
-                "future_starts": batch[16] if len(batch) >= 18 else None,
-                "future_ends": batch[17] if len(batch) >= 18 else None,
             }
 
             if train_args['fp16']:
@@ -139,10 +137,10 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
                     # Only evaluate when single GPU otherwise metrics may not average well
                     record = {}
                     if train_args['local_rank'] == -1 and train_args['evaluate_during_training']:
-                        results = evaluate(train_args, cache_validation_file, eval_json, model, tokenizer)
+                        results, scores = evaluate(train_args, cache_validation_file, eval_json, model, tokenizer)
                         for key, value in results.items():
                             record["eval_{}".format(key)] = value
-                    # record["lr"]=scheduler.get_last_lr()[0]
+                    record["lr"]=scheduler.get_last_lr()[0]
                     record["loss"] = (tr_loss - logging_loss) / train_args['logging_steps']
                     logging_loss = tr_loss
                     wandb.log(record,step=global_step)
@@ -150,12 +148,12 @@ def train(model, cache_train_file, cache_validation_file, eval_json, train_args,
 
                     replace_index = None
                     
-                    if np.sum(BEST_F1 < (record['eval_f1'])) > 0:
-                        if len(np.nonzero(BEST_F1 <  (record['eval_f1']))[0]) > 1:
-                            replace_index = np.nonzero(BEST_F1 <  (record['eval_f1']))[0][0]
+                    if np.sum(BEST_F1 < (record['eval_overall_f1'])) > 0:
+                        if len(np.nonzero(BEST_F1 <  (record['eval_overall_f1']))[0]) > 1:
+                            replace_index = np.nonzero(BEST_F1 <  (record['eval_overall_f1']))[0][0]
                         else:
-                            replace_index = np.nonzero(BEST_F1 <  (record['eval_f1']))[0]
-                            BEST_F1[replace_index] =  (record['eval_f1'])
+                            replace_index = np.nonzero(BEST_F1 <  (record['eval_overall_f1']))[0]
+                            BEST_F1[replace_index] =  (record['eval_overall_f1'])
                             BEST_STEP[replace_index] = global_step
 
 
