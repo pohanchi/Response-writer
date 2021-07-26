@@ -7,10 +7,10 @@ import apex
 from apex import amp
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Subset
-from utils.utils import set_seed
-from optimizer_utils import *
+from .utils import set_seed
+from .optimizer_utils import *
 from extract_feature.extract_feature_bert_quac_truncated import *
-from evaluate_utils_quac import *
+from .evaluate_utils_quac import *
 
 
 def train(model, cache_train_file, cache_validation_file, eval_json, train_args, tokenizer, wandb):

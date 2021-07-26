@@ -6,9 +6,8 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler,Subset
 from extract_feature.extract_feature_bert_doqa import *
 from metrics.RC_metrics_quac import *
 from metrics.quac_metrics import *
-from utils.utils import *
-import IPython
-import pdb
+from .utils import *
+
 
 
 def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):

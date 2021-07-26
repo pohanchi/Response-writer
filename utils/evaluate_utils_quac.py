@@ -3,10 +3,10 @@ import os
 import logging
 import timeit
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from extract_feature import *
+from extract_feature.extract_feature_bert_doqa import *
 from metrics.RC_metrics_quac import *
 from metrics.quac_metrics import *
-from utils import *
+from .utils import *
 
 
 def evaluate(train_args, eval_file, eval_json, model, tokenizer, prefix=""):
