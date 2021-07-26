@@ -294,33 +294,15 @@ if is_torch_available():
         BertLayer,
         BertLMHeadModel,
         BertModel,
-        BertModelRelative,
-        BertPreTrainedModel,
+        BertModelRelative, # Prepend History QA
+        BertModelRelativeHAE, #HAE
+        BertPreTrainedModel, 
         load_tf_weights_in_bert,
-        BertModelinitial_from_mu_sigma,
         BertModelMemory2,
         BertInjectMemory,
-        HisBERTModel,
-        BertModelreusemodule,
-        BertModelRelativeHAE,
-        BertModelMemory3,
-        BertModelMemory4,
-        BertModelMemory5,
-        BertModelMemory6,
-        BertModelMemory10,
-        BertModelMemory11,
-        BertModelMemory12,
+        HisBERTModel, # HisBERT
         BertModelMemory115,
-        BertModelMemory13,
-        BertModelMemory14,
-        BertModelMemory15,
-        BertModelMemory16,
-        BertModelMemory17,
-        BertModelMemory18,
-        BertModelMemory20,
-        BertModelMemory21,
-        BertModelMemory22,
-        BertModelMemory23,
+        BertModelMemory23, # HHF
     )
     from .modeling_bert_generation import (
         BertGenerationDecoder,
