@@ -1,3 +1,0 @@
-saved_directory: ../CQAModel/DoQA/Roberta-base/sep-dev-in_training
-eval_file: roberta/sep_doqa/doqa_test_file_movies
-exp_name: eval_original_roberta_base_movies
