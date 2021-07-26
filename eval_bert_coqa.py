@@ -8,13 +8,12 @@ import IPython
 import pdb
 import transformers
 
-from module import BERTQA_memory, BERTQA, BERTQA_memory_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, BERTQA_memory_HAE_coqa, BERTQA_memory23_coqa, BERTQA_original_coqa
-
+from module import BERTQA_memory_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, BERTQA_memory_HAE_coqa, BERTQA_memory23_coqa, BERTQA_original_coqa
 
 from transformers import BertTokenizer
-from evaluate_utils_coqa import evaluate 
-from extract_feature_bert_coqa_truncated import *
-from utils import *
+from utils.evaluate_utils_coqa import evaluate 
+from extract_feature, extract_feature_bert_coqa_truncated import *
+from utils.utils import *
 
 def main():
 
