@@ -11,7 +11,7 @@ from module import BERTQA_memory_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, B
 
 from transformers import BertTokenizer
 from utils.evaluate_utils_coqa import evaluate 
-from extract_feature, extract_feature_bert_coqa_truncated import *
+from extract_feature.extract_feature_bert_coqa_truncated import *
 from utils.utils import *
 
 def main():
