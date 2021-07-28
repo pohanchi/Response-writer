@@ -3,7 +3,7 @@
 Here is the implementation of the Hypernetwork for History Function. We utilize hypernetwork to generate parameter for storing conversation imformation. Then, through elementwise multiplication, parameter will fuse information into input to integrate conversation information and do the conversational questoin answering task. Also, we implement another four baseline methods to do a fair comparison in three conversational question answering datasets.
 
 <p align="center">
-  <img src="model.png">
+  <img width=30% height=30% src="model.png">
 </p>
 
 ## __Structure__
