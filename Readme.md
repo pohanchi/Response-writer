@@ -16,13 +16,13 @@ The project structure need to be initialized like below
         |--Model 1 you have saved
         |--Model 2 you have saved
         |-- ...
-    |--dataset
+    |--Dataset
         |--CoQA
         |--QuAC
         |--DoQA
         |--dataset_you_want
         |-- ...
-    |--preprocessing_files
+    |--Preprocessing_files
         |--CoQA
         |--DoQA
         |--QuAC
