@@ -6,6 +6,13 @@ Here is the implementation of the Hypernetwork for History Function. We utilize 
   <img width=30% height=30% src="./model.png">
 </p>
 
+## Dependencies
+
+- Python 3.7.3
+- Computing power (high-end GPU) and memory space (both RAM/GPU's RAM) is **extremely important** if you'd like to train your own model.
+- Required packages and their use are listed [requirements.txt](requirements.txt).
+
+
 ## __Structure__
 
 The project structure need to be initialized like below 
