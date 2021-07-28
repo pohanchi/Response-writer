@@ -4,3 +4,4 @@ tokenizers==0.8.1
 torch_optimizer==0.1.0
 datasets==1.0.1
 filelock==3.0.12
+wandb==0.8.36
