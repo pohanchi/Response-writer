@@ -7,4 +7,4 @@ max_seq_length: 512
 ratio: 1
 cache_features_file: ../preprocessing_files/bert/CoQA/clean_base_dev_file_HAE
 model_name: bert-base-uncased
-json_file: ../dataset_local/coqa/coqa-dev-v1.0.json
+json_file: ../dataset_local/CoQA/coqa-dev-v1.0.json

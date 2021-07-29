@@ -1,5 +1,19 @@
+import sys
+import os
+  
+# getting the name of the directory
+# where the this file is present.
+current = os.path.dirname(os.path.realpath(__file__))
+  
+# Getting the parent directory name
+# where the current directory is present.
+parent = os.path.dirname(current)
+  
+# adding the parent directory to 
+# the sys.path.
+sys.path.append(parent)
+
 import numpy as np
-import IPython, pdb
 import functools
 import wandb
 import json
@@ -17,7 +31,7 @@ import os
 import pickle
 import torch_optimizer as optim
 import torch.nn.functional as F
-from utils import logging
+from utils.utils import logging
 from enum import Enum
 from multiprocessing import Pool, cpu_count
 from functools import partial
@@ -892,9 +906,9 @@ if __name__ == '__main__':
 
     dataset_raw = []
     
-    if os.path.exists(f"../dataset_local/coqa/dump_complete_{mode}.p"):
-        print(f"load preload datset from ../dataset_local/coqa/dump_complete_{mode}.p")
-        dataset_dict = pickle.load(open(f"../dataset_local/coqa/dump_complete_{mode}.p","rb"))
+    if os.path.exists(f"../dataset_local/CoQA/dump_complete_{mode}.p"):
+        print(f"load preload datset from ../dataset_local/CoQA/dump_complete_{mode}.p")
+        dataset_dict = pickle.load(open(f"../dataset_local/CoQA/dump_complete_{mode}.p","rb"))
     else:
         print("file not exist, create a pickle file to preload in the next time ..")
         # preprocess data 
@@ -938,7 +952,7 @@ if __name__ == '__main__':
                 data_pair['context'] = paragraph_text
                 dataset_raw.append(deepcopy(data_pair))
             dataset_dict[mode] = dataset_raw
-            pickle.dump(dataset_dict, open(f"../dataset_local/coqa/dump_complete_{mode}.p","wb"))
+            pickle.dump(dataset_dict, open(f"../dataset_local/CoQA/dump_complete_{mode}.p","wb"))
 
     examples = convert_dataset_to_examples(dataset_dict,mode, history_turn=config['history_turn'])
 

@@ -1,3 +1,18 @@
+import sys
+import os
+  
+# getting the name of the directory
+# where the this file is present.
+current = os.path.dirname(os.path.realpath(__file__))
+  
+# Getting the parent directory name
+# where the current directory is present.
+parent = os.path.dirname(current)
+  
+# adding the parent directory to 
+# the sys.path.
+sys.path.append(parent)
+
 import numpy as np
 import functools
 import tqdm
@@ -20,6 +35,7 @@ from functools import partial
 from torch.nn.utils.rnn import pad_sequence 
 import argparse
 import yaml
+
 
 logger = logging
 
@@ -752,7 +768,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config = yaml.safe_load(open(args.config,"r"))
 
-    dataset = load_dataset("doqa", config['domain'],cache_dir="../dataset_local/doqa")
+    dataset = load_dataset("doqa", config['domain'],cache_dir="../dataset_local/DoQA")
     cached_features_file = config['output_name']
     tokenizer = BertTokenizer.from_pretrained(config['model_name'])
     extract_and_save_feature(dataset, config['mode'], tokenizer, config['is_training'], cached_features_file, ratio=config['ratio'], is_dev=config['is_dev'])

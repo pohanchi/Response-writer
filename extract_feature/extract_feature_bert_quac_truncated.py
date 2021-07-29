@@ -1,5 +1,19 @@
+import sys
+import os
+  
+# getting the name of the directory
+# where the this file is present.
+current = os.path.dirname(os.path.realpath(__file__))
+  
+# Getting the parent directory name
+# where the current directory is present.
+parent = os.path.dirname(current)
+  
+# adding the parent directory to 
+# the sys.path.
+sys.path.append(parent)
+
 import numpy as np
-import IPython, pdb
 import functools
 import tqdm
 import wandb
@@ -16,7 +30,7 @@ import re
 import time
 import torch_optimizer as optim
 import torch.nn.functional as F
-from utils import logging
+from utils.utils import logging
 from enum import Enum
 from multiprocessing import Pool, cpu_count
 from functools import partial

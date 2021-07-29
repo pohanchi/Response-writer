@@ -40,12 +40,3 @@ CUDA_VISIBLE_DEVICES=0 python eval_bert_doqa.py --config bert-official-config-ev
 # CUDA_VISIBLE_DEVICES=0 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_baseline_bert_base_movies_noq.yaml
 # CUDA_VISIBLE_DEVICES=0 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_baseline_bert_base_travel_noq.yaml
 
-
-
-#History Function
-# CUDA_VISIBLE_DEVICES=0 python main_bert_doqa.py --config bert-official-config-train/DoQA/train_config_hf_bert_base_switch.yaml
-
-# testing
-CUDA_VISIBLE_DEVICES=0 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_hf_bert_base_switch_cooking.yaml
-CUDA_VISIBLE_DEVICES=0 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_hf_bert_base_switch_movies.yaml
-CUDA_VISIBLE_DEVICES=0 python eval_bert_doqa.py --config bert-official-config-eval/DoQA/eval_config_hf_bert_base_switch_travel.yaml

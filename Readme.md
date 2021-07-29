@@ -11,11 +11,15 @@ Here is the implementation of the Hypernetwork for History Function. We utilize 
 - Python 3.7.3
 - Computing power (high-end GPU) and memory space (both RAM/GPU's RAM) is **extremely important** if you'd like to train your own model.
 - Required packages and their use are listed [requirements.txt](requirements.txt).
+- `pip install -r requirements.txt`
+- `apex` for half precision training (Please manually install in your computer)
 
 
 ## __Structure__
 
-The project structure need to be initialized like below.
+The project structure need to be initialized like below. 
+
+You can directly run the short script `bash ./short_script/init.sh` to construct the structure (one time is enough).
 
 ```
 |--main_project
@@ -60,17 +64,33 @@ The project structure need to be initialized like below.
         ...
 ```
 
-In the following tutorial, we will tell you how to run code on QuAC dataset.
+In the following tutorial, we will show you how to run this code on QuAC dataset.
+
 ## __Stage 0: Prepare data__
 
-In Stage 0, you need to download json file of dataset and store in the dataset_local folder. (For example: dataset_local/QuAC/train.json and dataset_local/QuAC/dev.json)
+In Stage 0, you need to download json file of dataset and store in the dataset_local folder. (For example: dataset_local/QuAC/train.json and dataset_local/QuAC/dev.json).
+You can install manually by youself. Here, we provide a conviencent shell script to automatically download CoQA, QuAC, dataset.
+
+`bash short_scripts/download_dataset.sh`
 
 ## __Stage 1: Data Preprocessing__
 
 In Stage 1, We have had json file, so we need to do preprocessing and store feature to do conversational question answering.
-The preprocessing code is in `Response-writer/extract_feature/extract_feature_bert_quac_truncated.py`. The preprocessing config is in `Response-writer/preprocessing_configs/bert/QuAC/base_train_truncated_HAE.yaml`
+You can directly run the well-written short script to get CoQA, DoQA, QuAC dataset preprocessing.
 
-## __Stage 2:Train Model__
+`bash short_script/extract_coqa_feature.sh`
 
-In Stage 2, You can train your model by finishing training config.
+`bash short_script/extract_doqa_feature.sh`
+
+`bash short_script/extract_quac_feature.sh`
+
+## __Stage 2: Train & Evaluate your Model__
+
+In Stage 2, You can train and evaluate your model.
+
+`bash short_scripts/doqa.sh`
+
+`bash short_scripts/coqa.sh`
+
+`bash short_scripts/quac.sh`
 
