@@ -10,6 +10,13 @@ echo "Dowload QuAC train/val json file to ../dataset_local/QuAC/{train_v0.2.json
 wget -O ../dataset_local/QuAC/train_v0.2.json https://s3.amazonaws.com/my89public/quac/train_v0.2.json
 wget -O ../dataset_local/QuAC/val_v0.2.json https://s3.amazonaws.com/my89public/quac/val_v0.2.json
 
+
+wget http://ixa2.si.ehu.es/convai/doqa-v2.1.zip
+unzip doqa-v2.1.zip
+rm doqa-v2.1.zip
+mv doqa-v2.1/doqa_dataset ../dataset_local/DoQA/
+rm -rf doqa-v2.1
+
 mkdir ../preprocessing_files/bert
 mkdir ../preprocessing_files/bert/CoQA
 mkdir ../preprocessing_files/bert/QuAC

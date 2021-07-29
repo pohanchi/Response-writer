@@ -27,7 +27,7 @@ null_score_diff_threshold: 0.0
 do_lower_case: True
 train_feature_file: ../preprocessing_files/bert/DoQA/base_train_file_cooking_HAE
 eval_feature_file: ../preprocessing_files/bert/DoQA/base_dev_file_cooking_HAE
-eval_json: ../dataset_local/doqa/downloads/extracted/fbd54edd7b6dab377ff9e01e3d49da6799e7eaca633f57cecf57f0748ee3688f/doqa-v2.1/doqa_dataset/doqa-cooking-dev-v2.1.json
+eval_json: ../dataset_local/DoQA/doqa_dataset/doqa-cooking-dev-v2.1.json
 
 model: BERTQA_original
 pretrained_name: bert-base-uncased
