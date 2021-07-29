@@ -15,7 +15,7 @@ Here is the implementation of the Hypernetwork for History Function. We utilize 
 
 ## __Structure__
 
-The project structure need to be initialized like below 
+The project structure need to be initialized like below.
 
 ```
 |--main_project
@@ -23,13 +23,19 @@ The project structure need to be initialized like below
         |--Model 1 you have saved
         |--Model 2 you have saved
         |-- ...
-    |--Dataset
+    |--dataset_local
         |--CoQA
+            |--coqa-dev-v1.0.json
+            |--coqa-train-v1.0.json
+            |-- ...
         |--QuAC
+            |--train.json
+            |--dev.json
+            |-- ...
         |--DoQA
         |--dataset_you_want
         |-- ...
-    |--Preprocessing_files
+    |--preprocessing_files
         |--CoQA
         |--DoQA
         |--QuAC
@@ -53,3 +59,18 @@ The project structure need to be initialized like below
         requirement.txt
         ...
 ```
+
+In the following tutorial, we will tell you how to run code on QuAC dataset.
+## __Stage 0: Prepare data__
+
+In Stage 0, you need to download json file of dataset and store in the dataset_local folder. (For example: dataset_local/QuAC/train.json and dataset_local/QuAC/dev.json)
+
+## __Stage 1: Data Preprocessing__
+
+In Stage 1, We have had json file, so we need to do preprocessing and store feature to do conversational question answering.
+The preprocessing code is in `Response-writer/extract_feature/extract_feature_bert_quac_truncated.py`. The preprocessing config is in `Response-writer/preprocessing_configs/bert/QuAC/base_train_truncated_HAE.yaml`
+
+## __Stage 2:Train Model__
+
+In Stage 2, You can train your model by finishing training config.
+
