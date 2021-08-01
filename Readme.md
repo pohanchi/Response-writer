@@ -90,7 +90,6 @@ In Stage 2, You can train and evaluate your model.
 
 `bash short_scripts/doqa.sh`
 
-<!-- `bash short_scripts/coqa.sh`
+`bash short_scripts/coqa.sh`
 
-`bash short_scripts/quac.sh` -->
-
+`bash short_scripts/quac.sh`
