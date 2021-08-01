@@ -9,5 +9,8 @@ transformers==3.1.0
 sentencepiece==0.1.96
 sacremoses==0.0.45
 spacy==2.2.0
+protobuf==3.8.0
+jsonschema==3.0.0
+decorator
 regex
 packaging

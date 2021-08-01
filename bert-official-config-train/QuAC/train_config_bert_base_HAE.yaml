@@ -1,6 +1,6 @@
-bottleneck_size: 24
+bottleneck_size: 16
 add_cross_attention: false
-exp_name: QuAC_bert_base_uncased_noq
+exp_name: QuAC_bert_HAE
 epoches: 3
 weight_decay: 0.0
 learning_rate: 0.00003
@@ -8,8 +8,8 @@ warmup_steps: 1000
 adam_epsilon: 1.0e-6
 adam_beta1: 0.9
 adam_beta2: 0.999
-batch_size: 6
-gradient_accumulation_steps: 4
+batch_size: 8
+gradient_accumulation_steps: 3
 local_rank: -1
 seed: 42
 num_labels: 2
@@ -18,7 +18,7 @@ fp16: False
 max_grad_norm: 10.0
 logging_steps: 1000
 save_steps: 1000
-output_dir: ../CQAModel/QuAC/BERT_noq/
+output_dir: ../CQAModel/QuAC/Bert-HAE/
 evaluate_during_training: True
 version_2_with_negative: True
 verbose_logging: True
@@ -30,8 +30,10 @@ train_feature_file: ../preprocessing_files/bert/QuAC/base_train_HAE
 eval_feature_file: ../preprocessing_files/bert/QuAC/base_dev_HAE
 eval_json: ../dataset_local/QuAC/val_v0.2.json
 
-model: BERTQA_original
+model: BERTQA_memory_HAE
 pretrained_name: bert-base-uncased
+pretrained_tokenizer: BertTokenizer
+
 
 model_config:
   pos_att_type: "c2p|p2c"
