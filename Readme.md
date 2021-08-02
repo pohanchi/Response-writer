@@ -15,6 +15,9 @@ Here is the implementation of the Hypernetwork for History Function. We utilize 
 - `apex` for half precision training (Please manually install in your computer)
 
 
+## Quick Start
+You can do `bash short_scripts/total_pipeline.sh` to run all pipeline ( init strucuture -> download data -> preprocessing -> train model ) after you well installed all package and finished the dependencies stage.
+
 ## __Structure__
 
 The project structure need to be initialized like below. 
