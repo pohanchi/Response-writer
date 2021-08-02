@@ -1,4 +1,4 @@
 saved_directory: ../CQAModel/DoQA/Bert_HAE/
 eval_file: ../preprocessing_files/bert/DoQA/base_test_file_travel_HAE
-eval_json: ../dataset_local/doqa/doqa_dataset/doqa-travel-test-v2.1.json
+eval_json: ../dataset_local/DoQA/doqa_dataset/doqa-travel-test-v2.1.json
 exp_name: eval_bert_travel_HAE

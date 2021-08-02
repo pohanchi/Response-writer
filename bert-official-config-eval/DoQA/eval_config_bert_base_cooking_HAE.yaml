@@ -1,4 +1,4 @@
 saved_directory: ../CQAModel/DoQA/Bert_HAE/
 eval_file: ../preprocessing_files/bert/DoQA/base_test_file_cooking_HAE
 eval_json: ../dataset_local/DoQA/doqa_dataset/doqa-cooking-test-v2.1.json
-exp_name: eval_hf_bert_cooking_HAE_future
+exp_name: eval_hf_bert_cooking_HAE
