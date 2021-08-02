@@ -12,5 +12,6 @@ spacy==2.2.0
 protobuf==3.12.0
 jsonschema==3.0.0
 decorator
+IPython
 regex
 packaging
