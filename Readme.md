@@ -64,7 +64,7 @@ You can directly run the short script `bash ./short_script/init.sh` to construct
         ...
 ```
 
-In the following tutorial, we will show you how to run this code on QuAC dataset.
+In the following tutorial, we will show you how to run this code on DoQA/CoQA/QuAC dataset.
 
 ## __Stage 0: Prepare data__
 
