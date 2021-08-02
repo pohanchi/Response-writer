@@ -73,7 +73,7 @@ In the following tutorial, we will show you how to run this code on DoQA/CoQA/Qu
 In Stage 0, you need to download json file of dataset and store in the dataset_local folder. (For example: dataset_local/QuAC/train.json and dataset_local/QuAC/dev.json).
 You can install manually by youself. Here, we provide a conviencent shell script to automatically download CoQA, QuAC, dataset.
 
-`bash short_scripts/download_dataset.sh`
+`bash short_scripts/download_data.sh`
 
 ## __Stage 1: Data Preprocessing__
 
