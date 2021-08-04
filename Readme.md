@@ -14,10 +14,12 @@ Here is the implementation of the Hypernetwork for History Function. We utilize 
 - `pip install -r requirements.txt`
 - `apex` for half precision training (Please manually install in your computer)
 
+## Quick Start
+You can do `bash short_scripts/total_pipeline.sh` to run all pipeline ( init strucuture -> download data -> preprocessing -> train model ) after you well installed all package and finished the dependencies stage (apex you need to manually install).
 
 ## __Structure__
 
-The project structure need to be initialized like below. 
+The project structure need to be initialized like below.
 
 You can directly run the short script `bash ./short_script/init.sh` to construct the structure (one time is enough).
 
@@ -64,14 +66,14 @@ You can directly run the short script `bash ./short_script/init.sh` to construct
         ...
 ```
 
-In the following tutorial, we will show you how to run this code on QuAC dataset.
+In the following tutorial, we will show you how to run this code on DoQA/CoQA/QuAC dataset.
 
 ## __Stage 0: Prepare data__
 
 In Stage 0, you need to download json file of dataset and store in the dataset_local folder. (For example: dataset_local/QuAC/train.json and dataset_local/QuAC/dev.json).
 You can install manually by youself. Here, we provide a conviencent shell script to automatically download CoQA, QuAC, dataset.
 
-`bash short_scripts/download_dataset.sh`
+`bash short_scripts/download_data.sh`
 
 ## __Stage 1: Data Preprocessing__
 

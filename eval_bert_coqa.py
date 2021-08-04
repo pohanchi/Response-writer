@@ -7,7 +7,7 @@ import wandb
 
 import transformers
 
-from module import BERTQA_memory_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, BERTQA_memory_HAE_coqa, BERTQA_memory23_coqa, BERTQA_original_coqa
+from module import BERTQA_memory_coqa, BERTQA_coqa, BERTQA_memoryHistory_coqa, BERTQA_memory_HAE_coqa, BERTQA_HHF_coqa, BERTQA_original_coqa
 
 from transformers import BertTokenizer
 from utils.evaluate_utils_coqa import evaluate 
