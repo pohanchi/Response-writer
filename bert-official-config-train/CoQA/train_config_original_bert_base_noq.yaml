@@ -32,6 +32,8 @@ eval_json: ../dataset_local/CoQA/coqa-dev-v1.0.json
 
 model: BERTQA_original_coqa
 pretrained_name: bert-base-uncased
+pretrained_tokenizer: BertTokenizer
+
 
 model_config:
   pos_att_type: "c2p|p2c"
