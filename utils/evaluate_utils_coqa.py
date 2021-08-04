@@ -5,7 +5,7 @@ import timeit
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler,SubsetRandomSampler
 from extract_feature.extract_feature_bert_coqa_truncated import *
 from metrics.RC_metrics_coqa import *
-from utils import *
+from utils.utils import *
 from metrics.coqa_metrics import *
 
 import IPython

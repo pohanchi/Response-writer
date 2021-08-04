@@ -5,7 +5,7 @@ torch_optimizer==0.1.0
 datasets==1.0.1
 filelock==3.0.12
 wandb==0.10.25
-transformers==3.1.0
+transformers==3.2.0
 sentencepiece==0.1.96
 sacremoses==0.0.45
 spacy==2.2.0

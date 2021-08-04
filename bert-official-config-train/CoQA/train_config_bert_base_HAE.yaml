@@ -27,7 +27,7 @@ n_best_size: 20
 null_score_diff_threshold: 0.0
 do_lower_case: True
 train_feature_file: ../preprocessing_files/bert/CoQA/clean_base_train_file_HAE
-eval_feature_file: ../preprocessing_files/bert/CoQA/clean_dev_file_HAE
+eval_feature_file: ../preprocessing_files/bert/CoQA/clean_base_dev_file_HAE
 eval_json: ../dataset_local/CoQA/coqa-dev-v1.0.json
 
 model: BERTQA_memory_HAE_coqa
