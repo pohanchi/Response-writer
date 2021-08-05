@@ -13,7 +13,7 @@ gradient_accumulation_steps: 4
 local_rank: -1
 seed: 42
 num_labels: 2
-dialog_labels: 2
+dialog_labels: 4
 fp16: False
 max_grad_norm: 10.0
 logging_steps: 1000
