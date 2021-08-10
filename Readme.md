@@ -98,10 +98,4 @@ In Stage 2, You can train and evaluate your model.
 
 ## __Model Checkpoint__
 
-| Model       | DoQA        |  QuAC        |  CoQA        |
-| ----------- | ----------- |  ----------- |  ----------- |
-| HHF         | checkpoint  |  checkpoint  |  checkpoint  |
-| BERTQA      | checkpoint  |  checkpoint  |  checkpoint  |
-| BERT_HAE    | checkpoint  |  checkpoint  |  checkpoint  |
-| HisBERT     | checkpoint  |  checkpoint  |  checkpoint  |
-| PHQA        | checkpoint  |  checkpoint  |  checkpoint  |
+Model checkpoints will be available on google drive soon!
