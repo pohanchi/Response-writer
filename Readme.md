@@ -98,4 +98,12 @@ In Stage 2, You can train and evaluate your model.
 
 ## __Model Checkpoint__
 
-Model checkpoints will be available on google drive soon!
+The google drive link is [here](https://drive.google.com/drive/folders/1ev-gOmNL6z2kX3cwTtiuIgtzSOKrmZZw?usp=sharing).
+
+Below are the description of checkpoint name:
+
+* Bert-base: PHQA (Prepend History question, Answer)
+* HisBERT: HisBERT
+* BERT_HAE: History Answer Encoding
+* BERT_HHF: Hypernetwork for History Function
+ 
