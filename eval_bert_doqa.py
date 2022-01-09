@@ -37,6 +37,10 @@ def main():
     config = torch.load(os.path.join(dir_path,"training_args.bin"))
 
     set_seed(config['seed'])
+
+    if config['model'] == 'BERTQA_memory23':
+        config['model'] = "BERTQA_HHF"
+
     model = eval(config['model'])(config)
     model.load_state_dict(torch.load(os.path.join(dir_path, "model.pt"), map_location="cpu"),strict=False)
 
@@ -49,8 +53,6 @@ def main():
     config['n_gpu']  = torch.cuda.device_count()
 
     model = model.to(config['device'])
-
-
     results = evaluate(config, eval_config['eval_file'], eval_config['eval_json'], model, tokenizer)
 
     record = {}

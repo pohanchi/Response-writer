@@ -35,6 +35,12 @@ def main():
     config = torch.load(os.path.join(dir_path,"training_args.bin"))
 
     set_seed(config['seed'])
+
+    if config['model'] == 'BERTQA_memory23_coqa':
+        config['model'] = "BERTQA_HHF_coqa"
+    if config['eval_json'] == '../dataset_local/coqa/coqa-dev-v1.0.json':
+        eval_config['eval_json'] = '../dataset_local/CoQA/coqa-dev-v1.0.json'
+
     model = eval(config['model'])(config)
     model.load_state_dict(torch.load(os.path.join(dir_path, "model.pt"), map_location="cpu"),strict=False)
 
